@@ -1,0 +1,3 @@
+/home/skeqi/MultiAxis/SoemMitionDevelop/build/CMakeFiles/SoemMotroControl.dir
+/home/skeqi/MultiAxis/SoemMitionDevelop/build/CMakeFiles/edit_cache.dir
+/home/skeqi/MultiAxis/SoemMitionDevelop/build/CMakeFiles/rebuild_cache.dir

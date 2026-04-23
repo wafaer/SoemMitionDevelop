@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "cubic.h": "c",
+        "ethercat.h": "c",
+        "rtapi_uspace.h": "c",
+        "servoenable.h": "c",
+        "time.h": "c",
+        "inttypes.h": "c"
+    }
+}

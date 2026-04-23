@@ -1,0 +1,57 @@
+//
+// Created by Administrator on 2025/8/16.
+//
+
+#ifndef CUBIC_H
+#define CUBIC_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    double a;
+    double b;
+    double c;
+    double d;
+} CUBIC_COEFF;
+
+typedef struct
+{
+    int configured;
+    double segmentTime;
+    int interpolationRate;
+    double interpolationTime;
+    double interpolationIncrement;
+    double x0, x1, x2, x3;
+    double wp0, wp1;
+    double velp0, velp1;
+    int filled;
+    int needNextPoint;
+    CUBIC_COEFF coeff;
+} CUBIC_STRUCT;
+
+extern int cubicInit(CUBIC_STRUCT * ci);
+extern int cubicSetSegmentTime(CUBIC_STRUCT * ci, double time);
+extern double cubicGetSegmentTime(CUBIC_STRUCT * ci);
+extern int cubicSetInterpolationRate(CUBIC_STRUCT * ci, int rate);
+extern int cubicGetInterpolationRate(CUBIC_STRUCT * ci);
+extern int cubicAddPoint(CUBIC_STRUCT * ci, double point);
+extern int cubicOffset(CUBIC_STRUCT * ci, double offset);
+extern double cubicGetInterpolationIncrement(CUBIC_STRUCT * ci);
+extern CUBIC_COEFF cubicGetCubicCoeff(CUBIC_STRUCT * ci);
+extern int cubicFilled(CUBIC_STRUCT * ci);
+extern double cubicInterpolate(CUBIC_STRUCT * ci, double *x,	/* same as
+                                   return val
+                                 */
+                   double *v,	/* velocity */
+                   double *a,	/* accel */
+                   double *j);	/* jerk */
+extern int cubicNeedNextPoint(CUBIC_STRUCT * ci);
+extern int cubicDrain(CUBIC_STRUCT * ci);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif //CUBIC_H

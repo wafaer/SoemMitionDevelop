@@ -1,0 +1,32 @@
+CMakeFiles/SoemMotroControl.dir/tp/spherical_arc.c.o: \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/tp/spherical_arc.c \
+ /usr/include/stdc-predef.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/tp/spherical_arc.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/libnml/posemath.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/tp/tp_types.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/tp/tcq.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/tp/tc_types.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/libnml/emcpos.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/libnml/posemath.h \
+ /home/skeqi/MultiAxis/SoemMitionDevelop/rtapi/rtapi_math.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/float.h /usr/include/math.h \
+ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+ /usr/include/features.h /usr/include/features-time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+ /usr/include/x86_64-linux-gnu/bits/timesize.h \
+ /usr/include/x86_64-linux-gnu/sys/cdefs.h \
+ /usr/include/x86_64-linux-gnu/bits/long-double.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
+ /usr/include/x86_64-linux-gnu/bits/types.h \
+ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+ /usr/include/x86_64-linux-gnu/bits/time64.h \
+ /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn-common.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h

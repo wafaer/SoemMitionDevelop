@@ -1,0 +1,15 @@
+//
+// Created by Administrator on 2025/8/15.
+//
+
+#ifndef EMCMOTCFG_H
+#define EMCMOTCFG_H
+
+#define DEFAULT_TC_QUEUE_SIZE 2000
+#define DEFAULT_SHMEM_KEY 100
+#define EMCMOT_MAX_AXIS 3
+
+#define DEFAULT_EMCMOT_COMM_TIMEOUT 1.0
+#define EMCMOT_MAX_MISC_ERROR 64
+
+#endif //EMCMOTCFG_H
