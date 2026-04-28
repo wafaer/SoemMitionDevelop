@@ -110,12 +110,21 @@ void emcmotController(void *arg, long period)
 
 static void handle_interpolation(void)
 {
+	static int prev_state = -1;
+	if (emcmotStatus->motion_state != prev_state)
+	{
+		if (emcmotStatus->motion_state == EMCMOT_MOTION_COORD)
+		{
+			EmcPose init_pose;
+			init_pose.tran.x = axes[0].pos_cmd;
+			init_pose.tran.y = axes[1].pos_cmd;
+			init_pose.tran.z = axes[2].pos_cmd;
 
-	emcmotStatus->carte_pos_cmd.tran.x = axes[0].pos_cmd;
-	emcmotStatus->carte_pos_cmd.tran.y = axes[1].pos_cmd;
-	emcmotStatus->carte_pos_cmd.tran.z = axes[2].pos_cmd;
+			tpSetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
+		}
 
-	tpSetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
+		prev_state = emcmotStatus->motion_state;
+	}
 }
 
 static void process_inputs(void)
@@ -467,8 +476,8 @@ static void get_pos_cmds(long period)
 {
     int axis_num, result;
     emcmot_axis_t *axis;// 轴结构体指针
-    int32_t positions[EMCMOT_MAX_AXIS]; // 位置数组
-    int32_t vel_lim; // 速度限制
+    double positions[EMCMOT_MAX_AXIS]; // 位置数组
+    double vel_lim; // 速度限制
 
     /* used in teleop mode to compute the max accell requested */
     int onlimit = 0;
@@ -583,9 +592,9 @@ static void get_pos_cmds(long period)
     				// 获取笛卡尔位置
     				tpGetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
 
-    				positions[0] = (int32_t)emcmotStatus->carte_pos_cmd.tran.x;
-    				positions[1] = (int32_t)emcmotStatus->carte_pos_cmd.tran.y;
-    				positions[2] = (int32_t)emcmotStatus->carte_pos_cmd.tran.z;
+    				positions[0] = emcmotStatus->carte_pos_cmd.tran.x;
+    				positions[1] = emcmotStatus->carte_pos_cmd.tran.y;
+    				positions[2] = emcmotStatus->carte_pos_cmd.tran.z;
 
 					//更新坐标并检查边界
     				if (axis_update_coord_with_bound(pcmd_p, servo_period)) {
@@ -619,12 +628,12 @@ static void get_pos_cmds(long period)
 
 				    axis = &axes[axis_num];
 					// 三次插补获取位置、速度和加速度
-					double vel_cmd;
-					double acc_cmd;
-				    axis->pos_cmd = (int32_t)cubicInterpolate(&(axis->cubic), 0, &vel_cmd, &acc_cmd, 0);
+					double vel_cmd = 0.0;
+					double acc_cmd = 0.0;
+				    axis->pos_cmd = cubicInterpolate(&(axis->cubic), 0, &vel_cmd, &acc_cmd, 0);
 
-					axis->vel_cmd = (int32_t)vel_cmd;
-					axis->acc_cmd = (int32_t)acc_cmd;
+					axis->vel_cmd = vel_cmd;
+					axis->acc_cmd = acc_cmd;
 					atomic_store(&atomic_actpos[axis_num], axis->pos_cmd);
 
 					rtapi_print_msg(RTAPI_MSG_DBG, "axis %d pos_cmd %d", axis_num, axis->pos_cmd);

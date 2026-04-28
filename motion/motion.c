@@ -392,8 +392,8 @@ static int setServoCycleTime(double secs)
     /* set the cubic interpolation rate and PID cycle time */
     for (t = 0; t < EMCMOT_MAX_AXIS; t++)
     {
-	cubicSetInterpolationRate(&(axes[t].cubic), emcmotConfig->interpolationRate);
-	cubicSetSegmentTime(&(axes[t].cubic), secs);
+		cubicSetInterpolationRate(&(axes[t].cubic), emcmotConfig->interpolationRate);
+    	cubicSetSegmentTime(&(axes[t].cubic), emcmotConfig->trajCycleTime);
     }
 
     /* copy into status out */

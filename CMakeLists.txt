@@ -10,8 +10,7 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_C_FLAGS_DEBUG "-g -O0 -fno-omit-frame-pointer -fsanitize=address")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fno-omit-frame-pointer -fsanitize=address")
 
-find_package(Boost 1.71 REQUIRED)
-find_package(SDL3 REQUIRED)
+find_package(Boost REQUIRED)
 
 set(SOEM140_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/soem140/include)
 set(SOEM140_LIB_DIR     ${PROJECT_SOURCE_DIR}/soem140/lib)
@@ -24,7 +23,6 @@ include_directories(
         ${PROJECT_SOURCE_DIR}
         ${SOEM140_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
-        ${SDL_INCLUDE_DIRS}
 )
 
 # MotroControl
@@ -103,6 +101,4 @@ set(MOTRO_CONTROL_HEADERS
 )
 
 add_executable(SoemMotroControl ${MOTRO_CONTROL_SOURCES} ${MOTRO_CONTROL_HEADERS})
-target_link_libraries(SoemMotroControl PRIVATE ${SOEM140_LIB} ${HPSOCKET_LIB} ${Boost_LIBRARIES} pthread rt SDL3::SDL3)
-
-
+target_link_libraries(SoemMotroControl PRIVATE ${SOEM140_LIB} ${HPSOCKET_LIB} ${Boost_LIBRARIES} pthread rt)

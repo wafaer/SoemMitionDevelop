@@ -14,14 +14,14 @@ extern "C" {
 
     typedef struct simple_tp_t
     {
-        int32_t pos_cmd;		/* position command */
-        int32_t max_vel;		/* velocity limit */
-        int32_t max_acc;		/* acceleration limit */
-        int32_t vel;		    /* velocity */
-        int32_t acc;		    /* acceleration*/
+        double pos_cmd;		/* position command */
+        double max_vel;		/* velocity limit */
+        double max_acc;		/* acceleration limit */
+        double vel;		    /* velocity */
+        double acc;		    /* acceleration*/
         int enable;		    /* if zero, motion stops ASAP */
-        int32_t curr_pos;	/* current position */
-        int32_t curr_vel;	/* current velocity */
+        double curr_pos;	/* current position */
+        double curr_vel;	/* current velocity */
         int active;		/* non-zero if motion in progress */
         int dir;
     } simple_tp_t;

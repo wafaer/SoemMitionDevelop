@@ -55,21 +55,21 @@ typedef enum {
 	{
 		cmd_code_t command;	/* command code (enum) */
 		int commandNum;		/* increment this for new command */
-		int32_t maxLimit;	/* pos value for position limit, output */
-		int32_t minLimit;	/* neg value for position limit, output */
+		double maxLimit;	/* pos value for position limit, output */
+		double minLimit;	/* neg value for position limit, output */
 		EmcPose pos;		/* line/circle endpt, or teleop vector */
 		PmCartesian center;	/* center for circle */
 		PmCartesian normal;	/* normal vec for circle */
 		int turn;		/* turns for circle or joint number for a locking indexer*/
-		int32_t Maxvel;		/* max velocity */
-		int32_t Maxacc;		/* max acceleration */
-		int32_t Maxdec;		/* max acceleration */
+		double Maxvel;		/* max velocity */
+		double Maxacc;		/* max acceleration */
+		double Maxdec;		/* max acceleration */
 
-		int32_t vel;		/* velocity */
-		int32_t acc;		/* acceleration */
-		int32_t dec;		/* acceleration */
+		double vel;		/* velocity */
+		double acc;		/* acceleration */
+		double dec;		/* acceleration */
 
-	    int32_t ini_maxvel;      /* max velocity allowed by machine constraints (the INI file) */
+	    double ini_maxvel;      /* max velocity allowed by machine constraints (the INI file) */
 	    int motion_type;        /* this move is because of traverse, feed, arc, or toolchange */
 		double spindlesync;     /* user units per spindle revolution, 0 = no sync */
 		int dir;
@@ -168,26 +168,26 @@ typedef enum {
 	{
 		/* configuration info - changes rarely */
 		int type;		/* 0 = linear, 1 = rotary */
-		int32_t max_pos_limit;	/* upper soft limit on joint pos */
-		int32_t min_pos_limit;	/* lower soft limit on joint pos */
-		int32_t max_jog_limit;	/* jog limits change when not homed */
-		int32_t min_jog_limit;
-		int32_t vel_limit;	/* upper limit of joint speed */
-		int32_t acc_limit;	/* upper limit of joint accel */
-		int32_t min_ferror;	/* zero speed following error limit */
-		int32_t max_ferror;	/* max speed following error limit */
+		double max_pos_limit;	/* upper soft limit on joint pos */
+		double min_pos_limit;	/* lower soft limit on joint pos */
+		double max_jog_limit;	/* jog limits change when not homed */
+		double min_jog_limit;
+		double vel_limit;	/* upper limit of joint speed */
+		double acc_limit;	/* upper limit of joint accel */
+		double min_ferror;	/* zero speed following error limit */
+		double max_ferror;	/* max speed following error limit */
 
 		EMCMOT_JOINT_FLAG flag;	/* see above for bit details */
-		int32_t coarse_pos;	    /* trajectory point, before interp */
-		int32_t pos_cmd;		/* commanded joint position */
-		int32_t vel_cmd;		/* commanded joint velocity */
-		int32_t acc_cmd;		/* commanded joint acceleration */
-		int32_t motor_pos_cmd;	/* commanded position, with comp */
-		int32_t motor_pos_fb;	/* position feedback, with comp */
-		int32_t pos_fb;		/* position feedback, comp removed */
-		int32_t ferror;		/* following error */
-		int64_t ferror_limit;	/* limit depends on speed */
-		int32_t ferror_high_mark;	/* max following error */
+		double coarse_pos;	    /* trajectory point, before interp */
+		double pos_cmd;		/* commanded joint position */
+		double vel_cmd;		/* commanded joint velocity */
+		double acc_cmd;		/* commanded joint acceleration */
+		double motor_pos_cmd;	/* commanded position, with comp */
+		double motor_pos_fb;	/* position feedback, with comp */
+		double pos_fb;		/* position feedback, comp removed */
+		double ferror;		/* following error */
+		double ferror_limit;	/* limit depends on speed */
+		double ferror_high_mark;	/* max following error */
 		simple_tp_t free_tp;	/* planner for free mode motion */
 
 		/* internal info - changes regularly, not usually accessed from user
@@ -197,23 +197,23 @@ typedef enum {
 		int on_pos_limit;	/* non-zero if on limit */
 		int on_neg_limit;	/* non-zero if on limit */
 
-		int32_t motor_offset;	/* diff between internal and motor pos, used to set position to zero during homing */
+		double motor_offset;	/* diff between internal and motor pos, used to set position to zero during homing */
     } emcmot_axis_t;
 
     typedef struct {
 		EMCMOT_JOINT_FLAG flag;	/* see above for bit details */
-	    int32_t axis_vel_cmd;	/* commanded axis velocity */
-		int32_t pos_cmd;		/* commanded joint position */
-		int32_t pos_fb;		/* position feedback, comp removed */
-		int32_t vel_cmd;         /* current velocity */
-		int32_t acc_cmd;         /* current acceleration */
-		int32_t ferror;		/* following error */
-		int32_t ferror_high_mark;	/* max following error */
-		int32_t backlash;	/* amount of backlash */
-		int32_t max_pos_limit;	/* upper soft limit on joint pos */
-		int32_t min_pos_limit;	/* lower soft limit on joint pos */
-		int32_t min_ferror;	/* zero speed following error limit */
-		int32_t max_ferror;	/* max speed following error limit */
+	    double axis_vel_cmd;	/* commanded axis velocity */
+		double pos_cmd;		/* commanded joint position */
+		double pos_fb;		/* position feedback, comp removed */
+		double vel_cmd;         /* current velocity */
+		double acc_cmd;         /* current acceleration */
+		double ferror;		/* following error */
+		double ferror_high_mark;	/* max following error */
+		double backlash;	/* amount of backlash */
+		double max_pos_limit;	/* upper soft limit on joint pos */
+		double min_pos_limit;	/* lower soft limit on joint pos */
+		double min_ferror;	/* zero speed following error limit */
+		double max_ferror;	/* max speed following error limit */
     } emcmot_axis_status_t;
 
     typedef struct emcmot_status_t {
@@ -259,14 +259,14 @@ typedef enum {
 	    int reverse_run;
 
 		/* static status-- only changes upon input commands, e.g., config */
-		int32_t Maxvel;		/* scalar max vel */
-		int32_t Maxacc;		/* scalar max accel */
+		double Maxvel;		/* scalar max vel */
+		double Maxacc;		/* scalar max accel */
 
 		int motionType;
 		double distance_to_go;  /* in this move */
 		EmcPose dtg;
-		int32_t current_vel;
-		int32_t requested_vel;
+		double current_vel;
+		double requested_vel;
 
 		unsigned int tcqlen;
 		unsigned char tail;	/* flag count for mutex detect */
@@ -299,7 +299,7 @@ typedef enum {
 	    int interpolationRate;	/* grep control.c for an explanation....
 					   approx line 50 */
 
-		int32_t limitVel;	/* scalar upper limit on vel */
+		double limitVel;	/* scalar upper limit on vel */
 		unsigned char tail;	/* flag count for mutex detect */
 	    int arcBlendOptDepth;
 	    int arcBlendEnable;

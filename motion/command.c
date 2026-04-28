@@ -447,7 +447,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
 		        }
 
     			tpSetSpindleSync(&emcmotInternal->coord_tp,emcmotCommand->spindle, emcmotCommand->spindlesync, 0);
-    			axes[0].cubic.needNextPoint = 1;
+    			for (int t = 0; t < EMCMOT_MAX_AXIS; t++) {
+    				axes[t].cubic.needNextPoint = 1;
+    			}
 
 			    break;
 
