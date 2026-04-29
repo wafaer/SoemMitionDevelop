@@ -33,6 +33,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/wg/soem/SoemMitionDevelop/libnml/timer.cpp" "CMakeFiles/SoemMotroControl.dir/libnml/timer.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/libnml/timer.cpp.o.d"
   "/home/wg/soem/SoemMitionDevelop/motion/usrmotintf.cpp" "CMakeFiles/SoemMotroControl.dir/motion/usrmotintf.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/motion/usrmotintf.cpp.o.d"
   "/home/wg/soem/SoemMitionDevelop/rtapi/uspace_rtapi_app.cpp" "CMakeFiles/SoemMotroControl.dir/rtapi/uspace_rtapi_app.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/rtapi/uspace_rtapi_app.cpp.o.d"
+  "/home/wg/soem/SoemMitionDevelop/task/cleanup.cpp" "CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o.d"
   "/home/wg/soem/SoemMitionDevelop/task/taskintf.cpp" "CMakeFiles/SoemMotroControl.dir/task/taskintf.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/task/taskintf.cpp.o.d"
   "/home/wg/soem/SoemMitionDevelop/task/taskmain.cpp" "CMakeFiles/SoemMotroControl.dir/task/taskmain.cpp.o" "gcc" "CMakeFiles/SoemMotroControl.dir/task/taskmain.cpp.o.d"
   "" "SoemMotroControl" "gcc" "CMakeFiles/SoemMotroControl.dir/link.d"

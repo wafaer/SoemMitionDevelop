@@ -160,5 +160,11 @@
   "command": "/usr/bin/cc  -I/home/wg/soem/SoemMitionDevelop -I/home/wg/soem/SoemMitionDevelop/soem140/include -g -O0 -fno-omit-frame-pointer -fsanitize=address -std=gnu99 -fdiagnostics-color=always -o CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o -c /home/wg/soem/SoemMitionDevelop/hal/hpsocket.c",
   "file": "/home/wg/soem/SoemMitionDevelop/hal/hpsocket.c",
   "output": "CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o"
+},
+{
+  "directory": "/home/wg/soem/SoemMitionDevelop/cmake-build-debug",
+  "command": "/usr/bin/c++  -I/home/wg/soem/SoemMitionDevelop -I/home/wg/soem/SoemMitionDevelop/soem140/include -g -O0 -fno-omit-frame-pointer -fsanitize=address -std=gnu++17 -fdiagnostics-color=always -o CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o -c /home/wg/soem/SoemMitionDevelop/task/cleanup.cpp",
+  "file": "/home/wg/soem/SoemMitionDevelop/task/cleanup.cpp",
+  "output": "CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o"
 }
 ]

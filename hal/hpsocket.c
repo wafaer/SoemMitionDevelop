@@ -251,7 +251,7 @@ int socket_init()
     // connect server
     // 初始化客户端
     clientLinux.id = 1;
-    clientLinux.serverIP = "192.168.14.244";
+    clientLinux.serverIP = "192.168.1.1";
     clientLinux.serverPort = 55655;
     clientLinux.bRunning = FALSE;
     clientLinux.bConnected = FALSE;

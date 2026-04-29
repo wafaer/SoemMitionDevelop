@@ -6,7 +6,6 @@ CMake Warning (dev) at CMakeLists.txt:13 (find_package):
 
 This warning is for project developers.  Use -Wno-dev to suppress it.
 
--- Found Boost: /usr/lib/x86_64-linux-gnu/cmake/Boost-1.83.0/BoostConfig.cmake (found version "1.83.0")
 -- Configuring done (0.1s)
--- Generating done (0.1s)
+-- Generating done (0.0s)
 -- Build files have been written to: /home/wg/soem/SoemMitionDevelop/cmake-build-debug

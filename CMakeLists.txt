@@ -54,6 +54,7 @@ set(MOTRO_CONTROL_SOURCES
         hal/rt_queue.c
         libnml/posemath.cpp
         hal/hpsocket.c
+        task/cleanup.cpp
 )
 
 set(MOTRO_CONTROL_HEADERS

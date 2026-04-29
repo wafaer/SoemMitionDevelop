@@ -38,6 +38,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/SoemMotroControl.dir/rtapi/uspace_common.c.o.d"
   "CMakeFiles/SoemMotroControl.dir/rtapi/uspace_rtapi_app.cpp.o"
   "CMakeFiles/SoemMotroControl.dir/rtapi/uspace_rtapi_app.cpp.o.d"
+  "CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o"
+  "CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o.d"
   "CMakeFiles/SoemMotroControl.dir/task/taskintf.cpp.o"
   "CMakeFiles/SoemMotroControl.dir/task/taskintf.cpp.o.d"
   "CMakeFiles/SoemMotroControl.dir/task/taskmain.cpp.o"

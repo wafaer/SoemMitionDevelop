@@ -31,6 +31,7 @@ SoemMotroControl: \
   CMakeFiles/SoemMotroControl.dir/hal/rt_queue.c.o \
   CMakeFiles/SoemMotroControl.dir/libnml/posemath.cpp.o \
   CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o \
+  CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o \
   /home/wg/soem/SoemMitionDevelop/soem140/lib/libsoem.a \
   /home/wg/soem/SoemMitionDevelop/hpsocket/lib/libhpsocket4c.a \
   /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/libpthread.a \
@@ -126,6 +127,8 @@ CMakeFiles/SoemMotroControl.dir/hal/rt_queue.c.o:
 CMakeFiles/SoemMotroControl.dir/libnml/posemath.cpp.o:
 
 CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o:
+
+CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o:
 
 /home/wg/soem/SoemMitionDevelop/soem140/lib/libsoem.a:
 

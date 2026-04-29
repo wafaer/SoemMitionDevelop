@@ -36,11 +36,6 @@ void emctask_quit(int sig)
 
 static int emctask_shutdown(void)
 {
-
-	socket_thread_exit();
-	ecat_thread_exit();
-	motion_thread_exit();
-
 	// delete the timer
 	if (0 != timer) {
 		delete timer;

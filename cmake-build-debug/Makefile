@@ -585,6 +585,30 @@ rtapi/uspace_rtapi_app.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/SoemMotroControl.dir/build.make CMakeFiles/SoemMotroControl.dir/rtapi/uspace_rtapi_app.cpp.s
 .PHONY : rtapi/uspace_rtapi_app.cpp.s
 
+task/cleanup.o: task/cleanup.cpp.o
+.PHONY : task/cleanup.o
+
+# target to build an object file
+task/cleanup.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/SoemMotroControl.dir/build.make CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o
+.PHONY : task/cleanup.cpp.o
+
+task/cleanup.i: task/cleanup.cpp.i
+.PHONY : task/cleanup.i
+
+# target to preprocess a source file
+task/cleanup.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/SoemMotroControl.dir/build.make CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.i
+.PHONY : task/cleanup.cpp.i
+
+task/cleanup.s: task/cleanup.cpp.s
+.PHONY : task/cleanup.s
+
+# target to generate assembly for a file
+task/cleanup.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/SoemMotroControl.dir/build.make CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.s
+.PHONY : task/cleanup.cpp.s
+
 task/taskintf.o: task/taskintf.cpp.o
 .PHONY : task/taskintf.o
 
@@ -843,6 +867,9 @@ help:
 	@echo "... rtapi/uspace_rtapi_app.o"
 	@echo "... rtapi/uspace_rtapi_app.i"
 	@echo "... rtapi/uspace_rtapi_app.s"
+	@echo "... task/cleanup.o"
+	@echo "... task/cleanup.i"
+	@echo "... task/cleanup.s"
 	@echo "... task/taskintf.o"
 	@echo "... task/taskintf.i"
 	@echo "... task/taskintf.s"
