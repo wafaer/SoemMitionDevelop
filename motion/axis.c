@@ -612,8 +612,7 @@ void axis_apply_ext_offsets_to_carte_pos(int extfactor, double *pcmd_p[])
     // expect extfactor =  -1 || 0 || +1
     /* 遍历所有轴，将外部偏移叠加到笛卡尔位置上 */
     for (n = 0; n < EMCMOT_MAX_AXIS; n++) {
-        *pcmd_p[n] = *pcmd_p[n]
-                            + extfactor * axis_array[n].ext_offset_tp.curr_pos;
+        *pcmd_p[n] = *pcmd_p[n] + extfactor * axis_array[n].ext_offset_tp.curr_pos;
     }
 }
 

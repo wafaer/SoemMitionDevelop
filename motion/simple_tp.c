@@ -8,6 +8,8 @@
 
 void simple_tp_update(simple_tp_t *tp, int32_t period)
 {
+    double max_dv, tiny_dp, pos_err, vel_req;
+
     /* max_dv : 每个伺服周期的最大速度增量
      * 计算公式：max_dv = acc * period
      * 含义：如果在一个伺服周期内从零加速到最大速度，速度增量为 acc * period。

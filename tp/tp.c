@@ -964,7 +964,7 @@ static tp_err_t tpCreateArcArcBlend(TP_STRUCT * const tp, TC_STRUCT * const prev
         return TP_ERR_FAIL;
     }
 
-    blendCheckConsume(&param, &points_exact, prev_tc, emcmotConfig->arcBlendGapCycles);/
+    blendCheckConsume(&param, &points_exact, prev_tc, emcmotConfig->arcBlendGapCycles);
 
     double phi1_new = prev_tc->coords.circle.xyz.angle - points_exact.trim1;
     double phi2_new = tc->coords.circle.xyz.angle - points_exact.trim2;
@@ -1721,8 +1721,6 @@ static double estimateParabolicBlendPerformance(
  */
 static int tcUpdateDistFromAccel(TC_STRUCT * const tc, double acc, double vel_desired, int reverse_run)
 {
-    rtapi_print_msg(RTAPI_MSG_DBG, "Update_tc->currentvel %f ", tc->currentvel);
-
     double v_next = tc->currentvel + acc * tc->cycle_time;
     if (v_next < 0.0) {
         v_next = 0.0;
@@ -1741,7 +1739,7 @@ static int tcUpdateDistFromAccel(TC_STRUCT * const tc, double acc, double vel_de
         //使用 bisaturate 保证 tc->progress 保持在合法目标区间内
         tc->progress = bisaturate(tc->progress, tcGetTarget(tc, TC_DIR_FORWARD), tcGetTarget(tc, TC_DIR_REVERSE));
     }
-    rtapi_print_msg(RTAPI_MSG_DBG, "v_next %f\n", v_next);
+
     tc->currentvel = v_next;
 
     tc->on_final_decel = (fabs(vel_desired - tc->currentvel) < TP_VEL_EPSILON) && (acc < 0.0);
@@ -1792,10 +1790,6 @@ void tpCalculateTrapezoidalAccel(TP_STRUCT const * const tp, TC_STRUCT * const t
     double dx = tcGetDistanceToGo(tc, tp->reverse_run);
     double maxaccel = tcGetTangentialMaxAccel(tc);
 
-    rtapi_print_msg(RTAPI_MSG_DBG, "tc_finalvel %f",tc_finalvel);
-    rtapi_print_msg(RTAPI_MSG_DBG, " maxaccel %f",maxaccel);
-    rtapi_print_msg(RTAPI_MSG_DBG, " dx %f\n",dx);
-
     double discr_term1 = pmSq(tc_finalvel);
     double discr_term2 = maxaccel * (2.0 * dx - tc->currentvel * tc->cycle_time);
     double tmp_adt = maxaccel * tc->cycle_time * 0.5;
@@ -1821,10 +1815,6 @@ void tpCalculateTrapezoidalAccel(TP_STRUCT const * const tp, TC_STRUCT * const t
 
     *acc = saturate(maxnewaccel, maxaccel);
     *vel_desired = maxnewvel;
-
-    rtapi_print_msg(RTAPI_MSG_DBG, "acc %f",*acc);
-    rtapi_print_msg(RTAPI_MSG_DBG, " vel_desired %f\n",*vel_desired);
-
 }
 
 /*
@@ -1966,7 +1956,6 @@ static void tpSetRotaryUnlock(int axis, int unlock) {
 static int tpGetRotaryIsUnlocked(int axis) {
     return _GetRotaryIsUnlocked(axis);
 }
-
 
 /*
  * tpCompleteSegment — 段完成后的清理
@@ -2348,7 +2337,7 @@ static int tpCheckEndCondition(TP_STRUCT const * const tp, TC_STRUCT * const tc,
         return TP_ERR_NO_ACTION;
     }
 
-    rtapi_print_msg(RTAPI_MSG_DBG, " tc->splitting3 %d\n", tc->splitting);
+    rtapi_print_msg(RTAPI_MSG_DBG, " tc->splitting %d\n", tc->splitting);
 
     return TP_ERR_OK;
 }

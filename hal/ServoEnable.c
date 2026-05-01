@@ -259,6 +259,14 @@ void *ecatthread(void *arg)
          rtapi_print_msg(RTAPI_MSG_INFO, " PPtargetPosition=%d\n", emcecatStatus->motoro[i]->PPtargetPosition);
       }
 
+      emcmotStatus->carte_pos_cmd.tran.x = axes[0].pos_cmd;
+      emcmotStatus->carte_pos_cmd.tran.y = axes[1].pos_cmd;
+      emcmotStatus->carte_pos_cmd.tran.z = axes[2].pos_cmd;
+
+      emcmotStatus->carte_pos_fb.tran.x  = axes[0].pos_fb;
+      emcmotStatus->carte_pos_fb.tran.y  = axes[1].pos_fb;
+      emcmotStatus->carte_pos_fb.tran.z  = axes[2].pos_fb;
+
       firstflag = 1;
    }
 

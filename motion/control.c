@@ -102,6 +102,9 @@ void emcmotController(void *arg, long period)
         // pcmd_p[6] = &(emcmotStatus->carte_pos_cmd.u);
         // pcmd_p[7] = &(emcmotStatus->carte_pos_cmd.v);
         // pcmd_p[8] = &(emcmotStatus->carte_pos_cmd.w);
+
+    	tpSetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
+
         do_once = 0;  /* 清除初始化标志，后续调用不再进入此块 */
     }
 
@@ -494,6 +497,7 @@ static void set_operating_mode(void)
 
 			/* 将坐标轨迹规划器的当前位置设置为当前的笛卡尔位置 */
 			tpSetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
+
 			/* 排空所有轴的三次样条插值器。
 			 * 这确保在切换到 Coord 模式后，插值器从正确的起点重新开始。*/
 			for (axis_num = 0; axis_num < EMCMOT_MAX_AXIS; axis_num++) {
@@ -667,6 +671,7 @@ static void get_pos_cmds(long period)
     			/* 运行 Coord 模式的轨迹规划循环。
     			 * 每次 cubicNeedNextPoint() 返回 true 时，表示插值器需要下一个数据点，
     			 * 此时运行一次 coord_tp 的规划周期来提供新的目标位置。 */
+
     			while (cubicNeedNextPoint(&(axes[0].cubic)))
     			{
     				/* 运行坐标轨迹规划器的一个伺服周期，
@@ -725,11 +730,6 @@ static void get_pos_cmds(long period)
 					axis->acc_cmd = acc_cmd;
 					/* 将计算出的位置写入原子变量 */
 					atomic_store(&atomic_actpos[axis_num], axis->pos_cmd);
-
-					/* 【性能问题】这些 rtapi_print_msg 每周期都执行，
-					 * 在生产环境中会产生大量日志输出，应该注释掉或加上条件判断。 */
-					rtapi_print_msg(RTAPI_MSG_DBG, "axis %d pos_cmd %d", axis_num, axis->pos_cmd);
-					rtapi_print_msg(RTAPI_MSG_DBG, " vel_cmd %d\n", axis->vel_cmd);
 				}
 
 				/* 预设不在位，后续根据轨迹完成状态更新 */
@@ -739,6 +739,7 @@ static void get_pos_cmds(long period)
 				 * 如果完成了，设置全局到位标志。 */
 				if (tpIsDone(&emcmotInternal->coord_tp)) {
 				    SET_MOTION_INPOS_FLAG(1);
+					rtapi_print_msg(RTAPI_MSG_INFO, "COORD: cubic interpolation motion complete\n");
 				}
 				break;
 

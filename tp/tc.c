@@ -413,7 +413,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
              * 因为圆弧可能是螺旋线，弧长与角度不是线性关系。
              * pmCircleAngleFromProgress() 使用二次拟合（SpiralArcLengthFit）转换。 */
             res_fit = pmCircleAngleFromProgress(&tc->coords.circle.xyz,
-                    &tc->coords.line.xyz.fit,
+                    &tc->coords.circle.fit,
                     progress, &angle);
             /* 然后在角度 angle 处计算圆弧上的点 */
             pmCirclePoint(&tc->coords.circle.xyz,
