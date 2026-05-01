@@ -1,11 +1,9 @@
-//
-// Created by Administrator on 2025/8/15.
-//
-
 #include "tcq.h"
 #include <stddef.h>
 
-/** Return 0 if queue is valid, -1 if not */
+/*
+ * tcqCheck — 队列有效性检查
+ */
 static inline int tcqCheck(TC_QUEUE_STRUCT const * const tcq)
 {
     if ((0 == tcq) || (0 == tcq->queue))
@@ -15,18 +13,8 @@ static inline int tcqCheck(TC_QUEUE_STRUCT const * const tcq)
     return 0;
 }
 
-/*! tcqCreate() function
- *
- * \brief Creates a new queue for TC elements.
- *
- * This function creates a new queue for TC elements.
- * It gets called by tpCreate()
- *
- * @param    tcq       pointer to the new TC_QUEUE_STRUCT
- * @param	 _size	   size of the new queue
- * @param	 tcSpace   holds the space allocated for the new queue, allocated in motion.c
- *
- * @return	 int	   returns success or failure
+/*
+ * tcqCreate — 创建并初始化轨迹段队列
  */
 int tcqCreate(TC_QUEUE_STRUCT * const tcq, int _size, TC_STRUCT * const tcSpace)
 {
@@ -40,40 +28,20 @@ int tcqCreate(TC_QUEUE_STRUCT * const tcq, int _size, TC_STRUCT * const tcSpace)
 	return 0;
 }
 
-/*! tcqDelete() function
- *
- * \brief Deletes a queue holding TC elements.
- *
- * This function creates deletes a queue. It doesn't free the space
- * only throws the pointer away.
- * It gets called by tpDelete()
- * \todo FIXME, it seems tpDelete() is gone, and this function isn't used.
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 int	   returns success
+/*
+ * tcqDelete — 删除队列
  */
 int tcqDelete(TC_QUEUE_STRUCT * const tcq)
 {
     if (!tcqCheck(tcq)) {
-        /* free(tcq->queue); */
         tcq->queue = 0;
     }
 
     return 0;
 }
 
-/*! tcqInit() function
- *
- * \brief Initializes a queue with TC elements.
- *
- * This function initializes a queue with TC elements.
- * It gets called by tpClear() and
- * 	  	   		  by tpRunCycle() when we are aborting
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 int	   returns success or failure (if no tcq found)
+/*
+ * tcqInit — 初始化队列为空状态
  */
 int tcqInit(TC_QUEUE_STRUCT * const tcq)
 {
@@ -88,62 +56,46 @@ int tcqInit(TC_QUEUE_STRUCT * const tcq)
     return 0;
 }
 
-/*! tcqPut() function
- *
- * \brief puts a TC element at the end of the queue
- *
- * This function adds a tc element at the end of the queue.
- * It gets called by tpAddLine() and tpAddCircle()
- *
- * @param    tcq       pointer to the new TC_QUEUE_STRUCT
- * @param	 tc        the new TC element to be added
- *
- * @return	 int	   returns success or failure
+/*
+ * tcqPut — 将 TC 放入队尾
  */
 int tcqPut(TC_QUEUE_STRUCT * const tcq, TC_STRUCT const * const tc)
 {
-    /* check for initialized */
     if (tcqCheck(tcq)) return -1;
 
-    /* check for allFull, so we don't overflow the queue */
+    /* 检查 allFull，如果队列已满则拒绝写入 */
     if (tcq->allFull) {
 	    return -1;
     }
 
-    /* add it */
+    /* 将 TC 复制到队尾位置 */
     tcq->queue[tcq->end] = *tc;
     tcq->_len++;
 
-    /* update end ptr, modulo size of queue */
+    /* 更新队尾指针，环形回绕 */
     tcq->end = (tcq->end + 1) % tcq->size;
 
-    /* set allFull flag if we're really full */
+    /* 如果队尾追上队首，说明队列已满 */
     if (tcq->end == tcq->start) {
-	tcq->allFull = 1;
+	    tcq->allFull = 1;
     }
 
     return 0;
 }
 
-
-/*! tcqPopBack() function
- *
- * \brief removes the newest TC element (converse of tcqRemove)
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 int	   returns success or failure
+/*
+ * tcqPopBack — 弹出队尾（反向操作）
  */
 int tcqPopBack(TC_QUEUE_STRUCT * const tcq)
 {
-    /* check for initialized */
     if (tcqCheck(tcq)) return -1;
 
-    /* Too short to pop! */
     if (tcq->_len < 1) {
         return -1;
     }
 
+    /* 环形减法：end 前移一个位置
+     * 加 size 再取模，避免 end=0 时的负数问题 */
     int n = tcq->end - 1 + tcq->size;
     tcq->end = n % tcq->size;
     tcq->_len--;
@@ -151,8 +103,13 @@ int tcqPopBack(TC_QUEUE_STRUCT * const tcq)
     return 0;
 }
 
+/* TCQ_REVERSE_MARGIN — 反向历史的最大容量
+ */
 #define TCQ_REVERSE_MARGIN 200
 
+/*
+ * tcqPop — 从队首弹出元素（正向执行）
+ */
 int tcqPop(TC_QUEUE_STRUCT * const tcq)
 {
 
@@ -160,54 +117,43 @@ int tcqPop(TC_QUEUE_STRUCT * const tcq)
         return -1;
     }
 
+    /* 队列必须有元素才能弹出，或者如果是满的（allFull=1）也算有元素 */
     if (tcq->_len < 1 && !tcq->allFull) {
         return -1;
     }
 
-    /* update start ptr and reset allFull flag and len */
+    /* 更新队首指针，清除 allFull 标志 */
     tcq->start = (tcq->start + 1) % tcq->size;
     tcq->allFull = 0;
     tcq->_len--;
 
+    /* 更新反向历史长度 */
     if (tcq->_rlen < TCQ_REVERSE_MARGIN) {
-        //If we're not overwriting the history yet, then we have another segment added to the reverse history
         tcq->_rlen++;
     } else {
-        //If we're run out of spare reverse history, then advance rend
         tcq->rend = (tcq->rend + 1) % tcq->size;
     }
 
     return 0;
 }
 
-/*! tcqRemove() function
- *
- * \brief removes n items from the queue
- *
- * This function removes the first n items from the queue,
- * after checking that they can be removed
- * (queue initialized, queue not empty, enough elements in it)
- * Function gets called by tpRunCycle() with n=1
- * \todo FIXME: Optimize the code to remove only 1 element, might speed it up
- *
- * @param    tcq       pointer to the new TC_QUEUE_STRUCT
- * @param	 n         the number of TC elements to be removed
- *
- * @return	 int	   returns success or failure
+/*
+ * tcqRemove — 从队首移除 n 个元素
  */
 int tcqRemove(TC_QUEUE_STRUCT * const tcq, int n)
 {
 
     if (n <= 0) {
-	    return 0;		/* okay to remove 0 or fewer */
+	    return 0;
     }
 
+    /* 检查队列有效性和可移除性 */
     if (tcqCheck(tcq) || ((tcq->start == tcq->end) && !tcq->allFull) ||
             (n > tcq->_len)) {	/* too many requested */
 	    return -1;
     }
 
-    /* update start ptr and reset allFull flag and len */
+    /* 更新队首指针，清除 allFull 标志 */
     tcq->start = (tcq->start + n) % tcq->size;
     tcq->allFull = 0;
     tcq->_len -= n;
@@ -217,7 +163,7 @@ int tcqRemove(TC_QUEUE_STRUCT * const tcq, int n)
 
 
 /**
- * Step backward into the reverse history.
+ * tcqBackStep — 反向执行一步（将段退回队列）
  */
 int tcqBackStep(TC_QUEUE_STRUCT * const tcq)
 {
@@ -226,12 +172,11 @@ int tcqBackStep(TC_QUEUE_STRUCT * const tcq)
         return -1;
     }
 
-    // start == end means that queue is empty
-
+    /* 如果 start == rend，说明反向历史为空 */
     if ( tcq->start == tcq->rend) {
         return -1;
     }
-    /* update start ptr and reset allFull flag and len */
+    /* 更新队首指针（后退一步） */
     tcq->start = (tcq->start - 1 + tcq->size) % tcq->size;
     tcq->_len++;
     tcq->_rlen--;
@@ -239,15 +184,8 @@ int tcqBackStep(TC_QUEUE_STRUCT * const tcq)
     return 0;
 }
 
-/*! tcqLen() function
- *
- * \brief returns the number of elements in the queue
- *
- * Function gets called by tpSetVScale(), tpAddLine(), tpAddCircle()
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 int	   returns number of elements
+/*
+ * tcqLen — 获取队列长度
  */
 int tcqLen(TC_QUEUE_STRUCT const * const tcq)
 {
@@ -256,72 +194,46 @@ int tcqLen(TC_QUEUE_STRUCT const * const tcq)
     return tcq->_len;
 }
 
-/*! tcqItem() function
- *
- * \brief gets the n-th TC element in the queue, without removing it
- *
- * Function gets called by tpSetVScale(), tpRunCycle(), tpIsPaused()
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 TC_STRUCT returns the TC elements
+/*
+ * tcqItem — 获取第 n 个元素（不删除）
  */
 TC_STRUCT * tcqItem(TC_QUEUE_STRUCT const * const tcq, int n)
 {
     if (tcqCheck(tcq) || (n < 0) || (n >= tcq->_len)) return NULL;
 
+    /* 环形索引计算：(start + n) % size */
     return &(tcq->queue[(tcq->start + n) % tcq->size]);
 }
 
-/*!
- * \def TC_QUEUE_MARGIN
- * sets up a margin at the end of the queue, to reduce effects of race conditions
+/* TC_QUEUE_MARGIN — 队列"接近满"的判断边界
  */
 #define TC_QUEUE_MARGIN (TCQ_REVERSE_MARGIN+20)
 
-/*! tcqFull() function
- *
- * \brief get the full status of the queue
- * Function returns full if the count is closer to the end of the queue than TC_QUEUE_MARGIN
- *
- * Function called by update_status() in control.c
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 int       returns status (0==not full, 1==full)
+/*
+ * tcqFull — 判断队列是否"满"
  */
 int tcqFull(TC_QUEUE_STRUCT const * const tcq)
 {
     if (tcqCheck(tcq)) {
-	   return 1;		/* null queue is full, for safety */
+	   return 1;
     }
 
-    /* call the queue full if the length is into the margin, so reduce the
-       effect of a race condition where the appending process may not see the
-       full status immediately and send another motion */
-
+    /* 如果队列太小（size <= TC_QUEUE_MARGIN），直接返回 allFull */
     if (tcq->size <= TC_QUEUE_MARGIN) {
-	/* no margin available, so full means really all full */
 	    return tcq->allFull;
     }
 
+    /* 如果 _len 进入边界区域（>= size - TC_QUEUE_MARGIN），认为已满 */
     if (tcq->_len >= tcq->size - TC_QUEUE_MARGIN) {
-	/* we're into the margin, so call it full */
 	    return 1;
     }
 
-    /* we're not into the margin */
+    /* 未进入边界区域 */
     return 0;
 }
 
-/*! tcqLast() function
- *
- * \brief gets the last TC element in the queue, without removing it
- *
- *
- * @param    tcq       pointer to the TC_QUEUE_STRUCT
- *
- * @return	 TC_STRUCT returns the TC element
+/*
+ * tcqLast — 获取队尾元素（最新加入的）
  */
 TC_STRUCT *tcqLast(TC_QUEUE_STRUCT const * const tcq)
 {
@@ -331,8 +243,7 @@ TC_STRUCT *tcqLast(TC_QUEUE_STRUCT const * const tcq)
     if (tcq->_len == 0) {
         return NULL;
     }
-    //Fix for negative modulus error
+    /* end - 1 + size 避免 end=0 时的负数取模 */
     int n = tcq->end-1 + tcq->size;
     return &(tcq->queue[n % tcq->size]);
-
 }

@@ -1,7 +1,3 @@
-//
-// Created by Administrator on 2025/8/15.
-//
-
 #include "tc.h"
 #include <stdbool.h>
 #include "rtapi/rtapi.h"
@@ -9,6 +5,9 @@
 #include "spherical_arc.h"
 #include "rtapi/rtapi_math.h"
 
+/*
+ * tcGetMaxTargetVel — 获取段的最大可达速度
+ */
 double tcGetMaxTargetVel(TC_STRUCT const * const tc,
         double max_scale)
 {
@@ -16,32 +15,44 @@ double tcGetMaxTargetVel(TC_STRUCT const * const tc,
 
     switch (tc->synchronized) {
         case TC_SYNC_NONE:
-            // Get maximum reachable velocity from max feed override
+            /* 无主轴同步时，速度受进给倍率（feed override）控制。
+             * max_scale 通常从 UI 获取（0.0 ~ 1.0+）。 */
             v_max_target = tc->reqvel * max_scale;
             break;
 
         case TC_SYNC_VELOCITY: //Fallthrough
+            /* 主轴速度同步模式：忽略外部速度倍率，完全由主轴转速决定。
+             * max_scale 被强制设为 1.0。 */
             max_scale = 1.0;
             /* Fallthrough */
         case TC_SYNC_POSITION:
-            // Assume no spindle override during blend target
+            /* 主轴位置同步模式：速度由同步算法决定，不受 feed override 影响。 */
         default:
             v_max_target = tc->maxvel;
             break;
     }
 
-    // Clip maximum velocity by the segment's own maximum velocity
+    /* 取段自身 maxvel 和计算值中的较小值。
+     * 这确保了即使同步模式返回了较高的速度，也不会超过段的安全限制。 */
     return fmin(v_max_target, tc->maxvel);
 }
 
+/*
+ * tcGetOverallMaxAccel — 获取段的总体最大加速度
+ */
 double tcGetOverallMaxAccel(const TC_STRUCT *tc)
 {
-    // Handle any acceleration reduction due to an approximate-tangent "blend" with the previous or next segment
+    /* a_scale : 加速度缩放因子（0.0 ~ 1.0）
+     * 从 1.0 开始，逐步乘以折减系数。 */
     double a_scale = (1.0 - fmax(tc->kink_accel_reduce, tc->kink_accel_reduce_prev));
 
-    // Parabolic blending conditions: If the next segment or previous segment
-    // has a parabolic blend with this one, acceleration is scaled down by 1/2
-    // so that the sum of the two does not exceed the maximum.
+    /* 【抛物线混合时的加速度折半】
+     * 如果前一段有抛物线混合（blend_prev = 1），
+     * 或者本段的终止条件是抛物线模式，
+     * 则加速度缩放因子再乘以 0.5。
+     *
+     * 这是因为抛物线混合由两段对称的抛物线组成，
+     * 每段各承担一半的加速度，加起来等于总加速度。 */
     if (tc->blend_prev || TC_TERM_COND_PARABOLIC == tc->term_cond) {
         a_scale *= 0.5;
     }
@@ -50,15 +61,13 @@ double tcGetOverallMaxAccel(const TC_STRUCT *tc)
 }
 
 /**
- * Get acceleration for a tc based on the trajectory planner state.
+ * tcGetTangentialMaxAccel — 获取最大切向加速度
  */
 double tcGetTangentialMaxAccel(TC_STRUCT const * const tc)
 {
     double a_scale = tcGetOverallMaxAccel(tc);
 
-    // Reduce allowed tangential acceleration in circular motions to stay
-    // within overall limits (accounts for centripetal acceleration while
-    // moving along the circular path).
+    // 对于圆弧运动，需要考虑法向加速度
     if (tc->motion_type == TC_CIRCULAR || tc->motion_type == TC_SPHERICAL) {
         //Limit acceleration for circular arcs to allow for normal acceleration
         a_scale *= tc->acc_ratio_tan;
@@ -67,16 +76,21 @@ double tcGetTangentialMaxAccel(TC_STRUCT const * const tc)
 }
 
 
+/*
+ * tcSetKinkProperties — 设置拐角处的运动学属性
+ */
 int tcSetKinkProperties(TC_STRUCT *prev_tc, TC_STRUCT *tc, double kink_vel, double accel_reduction)
 {
   prev_tc->kink_vel = kink_vel;
-  //
   prev_tc->kink_accel_reduce = fmax(accel_reduction, prev_tc->kink_accel_reduce);
   tc->kink_accel_reduce_prev = fmax(accel_reduction, tc->kink_accel_reduce_prev);
 
   return 0;
 }
 
+/*
+ * tcInitKinkProperties — 初始化拐角属性为默认值
+ */
 int tcInitKinkProperties(TC_STRUCT *tc)
 {
     tc->kink_vel = -1.0;
@@ -85,6 +99,9 @@ int tcInitKinkProperties(TC_STRUCT *tc)
     return 0;
 }
 
+/*
+ * tcRemoveKinkProperties — 清除拐角属性
+ */
 int tcRemoveKinkProperties(TC_STRUCT *prev_tc, TC_STRUCT *tc)
 {
     prev_tc->kink_vel = -1.0;
@@ -94,34 +111,48 @@ int tcRemoveKinkProperties(TC_STRUCT *prev_tc, TC_STRUCT *tc)
 }
 
 
+/*
+ * tcCircleStartAccelUnitVector — 计算圆弧段首的加速度方向单位向量
+ */
 int tcCircleStartAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out)
 {
     PmCartesian startpoint;
     PmCartesian radius;
     PmCartesian tan, perp;
 
+    /* 获取圆弧在角度 0（起点）的位置 */
     pmCirclePoint(&tc->coords.circle.xyz, 0.0, &startpoint);
+    /* 计算从圆心指向起点的半径向量 */
     pmCartCartSub(&startpoint, &tc->coords.circle.xyz.center, &radius);
+    /* 切向方向 = 法向量 × 半径向量（右手定则） */
     pmCartCartCross(&tc->coords.circle.xyz.normal, &radius, &tan);
     pmCartUnitEq(&tan);
-    //The unit vector's actual direction is adjusted by the normal
-    //acceleration here. This unit vector is NOT simply the tangent
-    //direction.
+    /* 计算从起点到圆心的向量（perp 向量） */
     pmCartCartSub(&tc->coords.circle.xyz.center, &startpoint, &perp);
     pmCartUnitEq(&perp);
 
+    /* tan 分量：方向 × 切向加速度大小 */
     pmCartScalMult(&tan, tcGetOverallMaxAccel(tc), &tan);
+    /* perp 分量：单位向量 × 向心加速度大小（v²/r）
+     * 其中 v = reqvel，r = 半径
+     * 向心加速度 = v²/r = (reqvel²) / (2r) = (reqvel²) / (2r)
+     * 0.5 因子来自于圆弧角度的微分近似。 */
     pmCartScalMultEq(&perp, pmSq(0.5 * tc->reqvel)/tc->coords.circle.xyz.radius);
+    /* 两分量相加得到总加速度方向 */
     pmCartCartAdd(&tan, &perp, out);
     pmCartUnitEq(out);
     return 0;
 }
 
+/*
+ * tcCircleEndAccelUnitVector — 计算圆弧段尾的加速度方向单位向量
+ */
 int tcCircleEndAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out)
 {
     PmCartesian endpoint;
     PmCartesian radius;
 
+    /* 获取圆弧在角度 = angle（终点）的位置 */
     pmCirclePoint(&tc->coords.circle.xyz, tc->coords.circle.xyz.angle, &endpoint);
     pmCartCartSub(&endpoint, &tc->coords.circle.xyz.center, &radius);
     pmCartCartCross(&tc->coords.circle.xyz.normal, &radius, out);
@@ -130,8 +161,7 @@ int tcCircleEndAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const o
 }
 
 /**
- * Get the acceleration direction unit vector for blend velocity calculations.
- * This calculates the direction of acceleration at the start of a segment.
+ * tcGetStartAccelUnitVector — 获取段首的加速度方向单位向量
  */
 int tcGetStartAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out) {
 
@@ -152,8 +182,7 @@ int tcGetStartAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const ou
 }
 
 /**
- * Get the acceleration direction unit vector for blend velocity calculations.
- * This calculates the direction of acceleration at the end of a segment.
+ * tcGetEndAccelUnitVector — 获取段尾的加速度方向单位向量
  */
 int tcGetEndAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out) {
 
@@ -162,6 +191,7 @@ int tcGetEndAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out)
             *out=tc->coords.line.xyz.uVec;
             break;
         case TC_RIGIDTAP:
+            /* 刚性攻丝段尾需要反向，所以加速度方向与段首相反 */
             pmCartScalMult(&tc->coords.line.xyz.uVec, -1.0, out);
             break;
         case TC_CIRCULAR:
@@ -175,11 +205,12 @@ int tcGetEndAccelUnitVector(TC_STRUCT const * const tc, PmCartesian * const out)
     return 0;
 }
 
+/*
+ * tcGetIntersectionPoint — 获取两相邻段的交点
+ */
 int tcGetIntersectionPoint(TC_STRUCT const * const prev_tc,
         TC_STRUCT const * const tc, PmCartesian * const point)
 {
-    // TODO NULL pointer check?
-    // Get intersection point from geometry
     if (tc->motion_type == TC_LINEAR) {
         *point = tc->coords.line.xyz.start;
     } else if (prev_tc->motion_type == TC_LINEAR) {
@@ -194,7 +225,7 @@ int tcGetIntersectionPoint(TC_STRUCT const * const prev_tc,
 
 
 /**
- * Check if a segment can be consumed without disrupting motion or synced IO.
+ * tcCanConsume — 判断一个段是否可以"被消费"（从队列中移除）
  */
 int tcCanConsume(TC_STRUCT const * const tc)
 {
@@ -203,7 +234,6 @@ int tcCanConsume(TC_STRUCT const * const tc)
     }
 
     if (tc->blend_prev || tc->atspeed) {
-        //TODO add other conditions here (for any segment that should not be consumed by blending
         return false;
     }
 
@@ -212,9 +242,7 @@ int tcCanConsume(TC_STRUCT const * const tc)
 }
 
 /**
- * Find the geometric tangent vector to a helical arc.
- * Unlike the acceleration vector, the result of this calculation is a vector
- * tangent to the helical arc. This is called by wrapper functions for the case of a circular or helical arc.
+ * pmCircleTangentVector — 计算螺旋线在给定角度的切向量
  */
 int pmCircleTangentVector(PmCircle const * const circle,
         double angle_in, PmCartesian * const out)
@@ -224,38 +252,30 @@ int pmCircleTangentVector(PmCircle const * const circle,
     PmCartesian radius;
     PmCartesian uTan, dHelix, dRadial;
 
-    // Get vector in radial direction
     pmCirclePoint(circle, angle_in, &startpoint);
     pmCartCartSub(&startpoint, &circle->center, &radius);
 
-    /* Find local tangent vector using planar normal. Assuming a differential
-     * angle dtheta, the tangential component of the tangent vector is r *
-     * dtheta. Since we're normalizing the vector anyway, assume dtheta = 1.
-     */
     pmCartCartCross(&circle->normal, &radius, &uTan);
 
-    /* the binormal component of the tangent vector is (dz / dtheta) * dtheta.
-     */
+    /* dz/dtheta = rHelix / angle，每单位角度的 Z 向增量 */
     double dz = 1.0 / circle->angle;
     pmCartScalMult(&circle->rHelix, dz, &dHelix);
 
     pmCartCartAddEq(&uTan, &dHelix);
 
-    /* The normal component is (dr / dtheta) * dtheta.
-     */
+    /* dr/dtheta = spiral / angle，每单位角度的半径变化率 */
     double dr = circle->spiral / circle->angle;
     pmCartUnit(&radius, &dRadial);
     pmCartScalMultEq(&dRadial, dr);
     pmCartCartAddEq(&uTan, &dRadial);
 
-    //Normalize final output vector
     pmCartUnit(&uTan, out);
     return 0;
 }
 
 
 /**
- * Calculate the unit tangent vector at the start of a move for any segment.
+ * tcGetStartTangentUnitVector — 获取段首的切线方向单位向量
  */
 int tcGetStartTangentUnitVector(TC_STRUCT const * const tc, PmCartesian * const out) {
 
@@ -277,7 +297,7 @@ int tcGetStartTangentUnitVector(TC_STRUCT const * const tc, PmCartesian * const 
 }
 
 /**
- * Calculate the unit tangent vector at the end of a move for any segment.
+ * tcGetEndTangentUnitVector — 获取段尾的切线方向单位向量
  */
 int tcGetEndTangentUnitVector(TC_STRUCT const * const tc, PmCartesian * const out) {
 
@@ -302,8 +322,7 @@ int tcGetEndTangentUnitVector(TC_STRUCT const * const tc, PmCartesian * const ou
 
 
 /**
- * Calculate the distance left in the trajectory segment in the indicated
- * direction.
+ * tcGetDistanceToGo — 计算轨迹段的剩余距离
  */
 double tcGetDistanceToGo(TC_STRUCT const * const tc, int direction)
 {
@@ -314,43 +333,41 @@ double tcGetDistanceToGo(TC_STRUCT const * const tc, int direction)
     return distance;
 }
 
+/*
+ * tcGetTarget — 获取轨迹段的目标值
+ */
 double tcGetTarget(TC_STRUCT const * const tc, int direction)
 {
     return (direction == TC_DIR_REVERSE) ? 0.0 : tc->target;
 }
 
-
-/*! tcGetPos() function
- *
- * \brief This function calculates the machine position along the motion's path.
- *
- * As we move along a TC, from zero to its length, we call this function repeatedly,
- * with an increasing tc->progress.
- * This function calculates the machine position along the motion's path
- * corresponding to the current progress.
- * It gets called at the end of tpRunCycle()
- *
- * @param    tc    the current TC that is being planned
- *
- * @return	 EmcPose   returns a position (\ref EmcPose = datatype carrying XYZABC information
+/*
+ * tcGetPos — 获取 TC 沿路径的当前位置
  */
-
 int tcGetPos(TC_STRUCT const * const tc, EmcPose * const out) {
     tcGetPosReal(tc, TC_GET_PROGRESS, out);
     return 0;
 }
 
+/*
+ * tcGetStartpoint — 获取 TC 的起点
+ */
 int tcGetStartpoint(TC_STRUCT const * const tc, EmcPose * const out) {
     tcGetPosReal(tc, TC_GET_STARTPOINT, out);
     return 0;
 }
 
+/*
+ * tcGetEndpoint — 获取 TC 的终点
+ */
 int tcGetEndpoint(TC_STRUCT const * const tc, EmcPose * const out) {
     tcGetPosReal(tc, TC_GET_ENDPOINT, out);
     return 0;
 }
 
-//of_point 取点模式
+/*
+ * tcGetPosReal — 核心位置计算函数
+ */
 int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
 {
     PmCartesian xyz;
@@ -358,6 +375,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
     PmCartesian uvw;
     double progress=0.0;
 
+    /* 根据 of_point 确定使用哪个进度值 */
     switch (of_point) {
         case TC_GET_PROGRESS:        // 当前进度
             progress = tc->progress;
@@ -370,14 +388,16 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
             break;
     }
 
-
-    // Used for arc-length to angle conversion with spiral segments
     double angle = 0.0;
     int res_fit = TP_ERR_OK;
 
+    /* 根据运动类型计算位置 */
     switch (tc->motion_type)
     {
         case TC_LINEAR:  //直线轨迹
+            /* 直线运动：每个坐标组的进度 = 归一化进度 × 该组总长度
+             * pmCartLinePoint(line, distance, &point)
+             * 在直线的 tmag 方向上，距离起点 distance 处的坐标。 */
             pmCartLinePoint(&tc->coords.line.xyz,
                     progress * tc->coords.line.xyz.tmag / tc->target,
                     &xyz);
@@ -389,12 +409,17 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
                     &abc);
             break;
         case TC_CIRCULAR:   //圆弧轨迹
+            /* 圆弧运动：需要将弧长进度转换为角度进度
+             * 因为圆弧可能是螺旋线，弧长与角度不是线性关系。
+             * pmCircleAngleFromProgress() 使用二次拟合（SpiralArcLengthFit）转换。 */
             res_fit = pmCircleAngleFromProgress(&tc->coords.circle.xyz,
-                    &tc->coords.circle.fit,
+                    &tc->coords.line.xyz.fit,
                     progress, &angle);
+            /* 然后在角度 angle 处计算圆弧上的点 */
             pmCirclePoint(&tc->coords.circle.xyz,
                     angle,
                     &xyz);
+            /* ABC 和 UVW 仍然是直线插值（同直线段） */
             pmCartLinePoint(&tc->coords.circle.abc,
                     progress * tc->coords.circle.abc.tmag / tc->target,
                     &abc);
@@ -403,6 +428,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
                     &uvw);
             break;
         case TC_SPHERICAL:   //球面弧
+            /* 球面弧：直接使用弧长进度计算点（球面弧的插值在 spherical_arc.c 中） */
             arcPoint(&tc->coords.arc.xyz,
                     progress,
                     &xyz);
@@ -411,6 +437,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
             break;
     }
 
+    /* 只有拟合成功时才更新位置 */
     if (res_fit == TP_ERR_OK) {
         // Don't touch pos unless we know the value is good
         pmCartesianToEmcPose(&xyz, &abc, &uvw, pos);
@@ -420,8 +447,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
 
 
 /**
- * Set the terminal condition of a segment.
- * This function will eventually handle state changes associated with altering a terminal condition.
+ * tcSetTermCond — 设置轨迹段的终止条件
  */
 int tcSetTermCond(TC_STRUCT *prev_tc, TC_STRUCT *tc, int term_cond) {
     switch (term_cond) {
@@ -438,7 +464,6 @@ int tcSetTermCond(TC_STRUCT *prev_tc, TC_STRUCT *tc, int term_cond) {
 
     }
     if (prev_tc) {
-        // tp_debug_print("setting term condition %d on tc id %d, type %d\n", term_cond, prev_tc->id, prev_tc->motion_type);
         prev_tc->term_cond = term_cond;
     }
     return 0;
@@ -446,90 +471,69 @@ int tcSetTermCond(TC_STRUCT *prev_tc, TC_STRUCT *tc, int term_cond) {
 
 
 /**
- * Connect a blend arc to the two line segments it blends.
- * Starting with two adjacent line segments, this function shortens each
- * segment to connect them with the newly created blend arc. The "previous"
- * segment gets a new end point, while the next segment gets a new start point.
- * After the operation is complete the result is a set of 3 connected segments
- * (line-arc-line).
+ * tcConnectBlendArc — 将混合圆弧连接到两段直线
  */
 int tcConnectBlendArc(TC_STRUCT * const prev_tc, TC_STRUCT * const tc,
         PmCartesian const * const circ_start,
         PmCartesian const * const circ_end) {
 
-    /* Only shift XYZ for now*/
     if (prev_tc) {
-        // tp_debug_print("connect: keep prev_tc\n");
-        //Have prev line, need to shorten it
+        /* 重新初始化前一段：从原起点到圆弧起点 */
         pmCartLineInit(&prev_tc->coords.line.xyz,
                 &prev_tc->coords.line.xyz.start, circ_start);
-        // tp_debug_print("Old target = %f\n", prev_tc->target);
+        /* 更新前一段的目标长度为缩短后的直线长度 */
         prev_tc->target = prev_tc->coords.line.xyz.tmag;
-        // tp_debug_print("Target = %f\n",prev_tc->target);
-        //Setup tangent blending constraints
+        /* 设置终止条件为切向混合 */
         tcSetTermCond(prev_tc, tc, TC_TERM_COND_TANGENT);
-        // tp_debug_print(" L1 end  : %f %f %f\n",prev_tc->coords.line.xyz.end.x,
-        //         prev_tc->coords.line.xyz.end.y,
-        //         prev_tc->coords.line.xyz.end.z);
     } else {
-        // tp_debug_print("connect: consume prev_tc\n");
     }
 
-    //Shorten next line
+    /* 重新初始化后一段：从圆弧终点到原终点 */
     pmCartLineInit(&tc->coords.line.xyz, circ_end, &tc->coords.line.xyz.end);
 
-    // tp_info_print(" L2: old target = %f\n", tc->target);
+    /* 更新后一段的目标长度 */
     tc->target = tc->coords.line.xyz.tmag;
-    // tp_info_print(" L2: new target = %f\n", tc->target);
-    // tp_debug_print(" L2 start  : %f %f %f\n",tc->coords.line.xyz.start.x,
-    //         tc->coords.line.xyz.start.y,
-    //         tc->coords.line.xyz.start.z);
 
+    /* 同样设置终止条件为切向混合 */
     tcSetTermCond(prev_tc, tc, TC_TERM_COND_TANGENT);
-
-    // tp_info_print("       Q1: %f %f %f\n",circ_start->x,circ_start->y,circ_start->z);
-    // tp_info_print("       Q2: %f %f %f\n",circ_end->x,circ_end->y,circ_end->z);
 
     return 0;
 }
 
 
 /**
- * Check if the current segment is actively blending.
- * Checks if a blend should start based on acceleration and velocity criteria.
- * Also saves this status so that the blend continues until the segment is
- * done.
+ * tcIsBlending — 判断当前段是否正在混合
  */
 int tcIsBlending(TC_STRUCT * const tc) {
-    //FIXME Disabling blends for rigid tap cycle until changes can be verified.
     int is_blending_next = (tc->term_cond == TC_TERM_COND_PARABOLIC ) &&
         tc->on_final_decel && (tc->currentvel < tc->blend_vel) &&
         tc->motion_type != TC_RIGIDTAP;
 
-    //Latch up the blending_next status here, so that even if the prev conditions
-    //aren't necessarily true we still blend to completion once the blend
-    //starts.
+    /* 锁定：混合一旦开始就不能停止 */
     tc->blending_next |= is_blending_next;
 
     return tc->blending_next;
 }
 
+/*
+ * tcFindBlendTolerance — 计算混合容差参数
+ */
 int tcFindBlendTolerance(TC_STRUCT const * const prev_tc,
         TC_STRUCT const * const tc, double * const T_blend, double * const nominal_tolerance)
 {
     const double tolerance_ratio = 0.25;
     double T1 = prev_tc->tolerance;
     double T2 = tc->tolerance;
-    //Detect zero tolerance = no tolerance and force to reasonable maximum
+    /* 零容差 → 使用段长度的 25% 作为默认值 */
     if (T1 == 0) {
         T1 = prev_tc->nominal_length * tolerance_ratio;
     }
     if (T2 == 0) {
         T2 = tc->nominal_length * tolerance_ratio;
     }
+    /* 标称容差 = 两个容差中的较小值 */
     *nominal_tolerance = fmin(T1,T2);
-    //Blend tolerance is the limit of what we can reach by blending alone,
-    //consuming half a segment or less (parabolic equivalent)
+    /* 混合容差 = min(标称容差, 前段*0.25, 后段*0.25) */
     double blend_tolerance = fmin(fmin(*nominal_tolerance,
                 prev_tc->nominal_length * tolerance_ratio),
             tc->nominal_length * tolerance_ratio);
@@ -539,11 +543,7 @@ int tcFindBlendTolerance(TC_STRUCT const * const prev_tc,
 
 
 /**
- * Check for early stop conditions.
- * If a variety of conditions are true, then we can't do blending as we expect.
- * This function checks for any conditions that force us to stop on the current
- * segment. This is different from pausing or aborting, which can happen any
- * time.
+ * tcFlagEarlyStop — 检测需要提前停止的条件
  */
 int tcFlagEarlyStop(TC_STRUCT * const tc,
         TC_STRUCT * const nexttc)
@@ -554,23 +554,19 @@ int tcFlagEarlyStop(TC_STRUCT * const tc,
     }
 
     if(tc->synchronized != TC_SYNC_POSITION && nexttc->synchronized == TC_SYNC_POSITION) {
-        // we'll have to wait for spindle sync; might as well
-        // stop at the right place (don't blend)
-        // tp_debug_print("waiting on spindle sync for tc %d\n", tc->id);
         tcSetTermCond(tc, nexttc, TC_TERM_COND_STOP);
     }
 
     if(nexttc->atspeed) {
-        // we'll have to wait for the spindle to be at-speed; might as well
-        // stop at the right place (don't blend), like above
-        // FIXME change the values so that 0 is exact stop mode
-        // tp_debug_print("waiting on spindle atspeed for tc %d\n", tc->id);
         tcSetTermCond(tc, nexttc, TC_TERM_COND_STOP);
     }
 
     return TP_ERR_OK;
 }
 
+/*
+ * pmLine9Target — 计算直线9D运动的目标值
+ */
 double pmLine9Target(PmLine9 * const line9)
 {
     if (!line9->xyz.tmag_zero) {
@@ -586,10 +582,16 @@ double pmLine9Target(PmLine9 * const line9)
 
 
 /**
- * Initialize a new trajectory segment with common parameters.
- *
- * NOTE: this function only sets default values that are non-zero. Make sure
- * the struct is properly initialized BEFORE calling this function.
+ * tcInit — 初始化轨迹段
+ *   - motion_type        : 运动类型（直线/圆弧等）
+ *   - canon_motion_type  : 解释器级别的运动类型
+ *   - atspeed           : 主轴到位标志
+ *   - enables           : 使能位（进给倍率等）
+ *   - cycle_time        : 周期时间
+ *   - id                : 设为 -1（在加入队列时才分配）
+ *   - indexer_jnum      : 设为 -1（无索引旋转）
+ *   - active_depth      : 设为 1（活跃深度初始为1）
+ *   - acc_ratio_tan     : 设为 BLEND_ACC_RATIO_TANGENTIAL（0.5）
  */
 int tcInit(TC_STRUCT * const tc,
         int motion_type,
@@ -599,18 +601,16 @@ int tcInit(TC_STRUCT * const tc,
         char atspeed)
 {
 
-    /** Motion type setup */
     tc->motion_type = motion_type;
     tc->canon_motion_type = canon_motion_type;
     tc->atspeed = atspeed;
 
-    /** Segment settings passed down from interpreter*/
     tc->enables = enables;
     tc->cycle_time = cycle_time;
 
+    /* ID 在加入队列时才分配（可能在此之前由于混合圆弧而改变） */
     tc->id = -1; //ID to be set when added to queue (may change before due to blend arcs)
 
-    /** Segment settings (given values later during setup / optimization) */
     tc->indexer_jnum = -1;
 
     tc->active_depth = 1;
@@ -622,29 +622,27 @@ int tcInit(TC_STRUCT * const tc,
 
 
 /**
- * Set kinematic properties for a trajectory segment.
+ * tcSetupMotion — 设置轨迹段的运动学参数
  */
 int tcSetupMotion(TC_STRUCT * const tc,
         double vel,
         double ini_maxvel,
         double acc)
 {
-    //FIXME assumes that state is already set up in TC_STRUCT, which depends on external order of function calls.
-
     tc->maxaccel = acc;
 
     tc->maxvel = ini_maxvel;
 
     tc->reqvel = vel;
-    // To be computed by velocity optimization / spindle-sync calculations
     tc->target_vel = 0;
-    // To be filled in by tangent calculation, negative = invalid (KLUDGE)
     tcInitKinkProperties(tc);
 
     return TP_ERR_OK;
 }
 
-
+/*
+ * tcSetupState — 设置轨迹段的状态参数
+ */
 int tcSetupState(TC_STRUCT * const tc, TP_STRUCT const * const tp)
 {
     tcSetTermCond(tc, NULL, tp->termCond);
@@ -654,21 +652,21 @@ int tcSetupState(TC_STRUCT * const tc, TP_STRUCT const * const tp)
     return TP_ERR_OK;
 }
 
+/*
+ * pmLine9Init — 初始化直线9D运动
+ */
 int pmLine9Init(PmLine9 * const line9,
         EmcPose const * const start,
         EmcPose const * const end)
 {
-    // Scratch variables
     PmCartesian start_xyz, end_xyz;
     PmCartesian start_uvw, end_uvw;
     PmCartesian start_abc, end_abc;
 
-    // Convert endpoint to cartesian representation
     //将平移与各角向量拆分到三个 PmCartesian 里
     emcPoseToPmCartesian(start, &start_xyz, &start_abc, &start_uvw);
     emcPoseToPmCartesian(end, &end_xyz, &end_abc, &end_uvw);
 
-    // Initialize cartesian line members
     //调用 pmCartLineInit为 line9->xyz、line9->abc、line9->uvw 初始化线段信息（起点、终点、方向向量、长度等）
     int xyz_fail = pmCartLineInit(&line9->xyz, &start_xyz, &end_xyz);
     int abc_fail = pmCartLineInit(&line9->abc, &start_abc, &end_abc);
@@ -682,6 +680,9 @@ int pmLine9Init(PmLine9 * const line9,
     return TP_ERR_OK;
 }
 
+/*
+ * pmCircle9Init — 初始化圆弧9D运动
+ */
 int pmCircle9Init(PmCircle9 * const circ9,
         EmcPose const * const start,
         EmcPose const * const end,
@@ -696,11 +697,13 @@ int pmCircle9Init(PmCircle9 * const circ9,
     emcPoseToPmCartesian(start, &start_xyz, &start_abc, &start_uvw);
     emcPoseToPmCartesian(end, &end_xyz, &end_abc, &end_uvw);
 
+    /* 初始化 XYZ 平面圆弧（可能带螺旋） */
     int xyz_fail = pmCircleInit(&circ9->xyz, &start_xyz, &end_xyz, center, normal, turn);
     //Initialize line parts of Circle9
     int abc_fail = pmCartLineInit(&circ9->abc, &start_abc, &end_abc);
     int uvw_fail = pmCartLineInit(&circ9->uvw, &start_uvw, &end_uvw);
 
+    /* 计算螺旋圆弧的弧长拟合系数 */
     int res_fit = findSpiralArcLengthFit(&circ9->xyz,&circ9->fit);
 
     if (xyz_fail || abc_fail || uvw_fail || res_fit) {
@@ -711,16 +714,23 @@ int pmCircle9Init(PmCircle9 * const circ9,
     return TP_ERR_OK;
 }
 
+/*
+ * pmCircle9Target — 计算圆弧9D的总目标距离
+ */
 double pmCircle9Target(PmCircle9 const * const circ9)
 {
 
     double h2;
     pmCartMagSq(&circ9->xyz.rHelix, &h2);
+    /* 螺旋长度 = sqrt(平面弧长² + 螺旋高度²) */
     double helical_length = pmSqrt(pmSq(circ9->fit.total_planar_length) + h2);
 
     return helical_length;
 }
 
+/*
+ * tcUpdateCircleAccRatio — 更新圆弧的加速度比率
+ */
 int tcUpdateCircleAccRatio(TC_STRUCT * tc)
 {
     if (tc->motion_type == TC_CIRCULAR) {
@@ -731,16 +741,11 @@ int tcUpdateCircleAccRatio(TC_STRUCT * tc)
         tc->acc_ratio_tan = limits.acc_ratio;
         return 0;
     }
-    // TODO handle blend arc here too?
     return 1; //nothing to do, but not an error
 }
 
 /**
- * "Finalizes" a segment so that its length can't change.
- * By setting the finalized flag, we tell the optimizer that this segment's
- * length won't change anymore. Since any blends are already set up, we can
- * trust that the length will be the same, and so can use the length in the
- * velocity optimization.
+ * tcFinalizeLength — 定稿轨迹段长度
  */
 int tcFinalizeLength(TC_STRUCT * const tc)
 {
@@ -750,11 +755,8 @@ int tcFinalizeLength(TC_STRUCT * const tc)
     }
 
     if (tc->finalized) {
-        // tp_debug_print("tc %d already finalized\n", tc->id);
         return TP_ERR_NO_ACTION;
     }
-
-    // tp_debug_print("Finalizing motion id %d, type %d\n", tc->id, tc->motion_type);
 
     tcClampVelocityByLength(tc);
 
@@ -765,6 +767,9 @@ int tcFinalizeLength(TC_STRUCT * const tc)
 }
 
 
+/*
+ * tcClampVelocityByLength — 根据段长度限制速度
+ */
 int tcClampVelocityByLength(TC_STRUCT * const tc)
 {
     //Apply velocity corrections
@@ -772,16 +777,13 @@ int tcClampVelocityByLength(TC_STRUCT * const tc)
         return TP_ERR_FAIL;
     }
 
-    //Reduce max velocity to match sample rate
-    //Assume that cycle time is valid here
     double sample_maxvel = tc->target / tc->cycle_time;
-    // tp_debug_print("sample_maxvel = %f\n",sample_maxvel);
     tc->maxvel = fmin(tc->maxvel, sample_maxvel);
     return TP_ERR_OK;
 }
 
 /**
- * compute the total arc length of a circle segment
+ * tcUpdateTargetFromCircle — 从圆弧几何更新段目标
  */
 int tcUpdateTargetFromCircle(TC_STRUCT * const tc)
 {
@@ -791,6 +793,7 @@ int tcUpdateTargetFromCircle(TC_STRUCT * const tc)
 
     double h2;
     pmCartMagSq(&tc->coords.circle.xyz.rHelix, &h2);
+    /* 螺旋总弧长 = sqrt(平面弧长² + 螺旋高度²) */
     double helical_length = pmSqrt(pmSq(tc->coords.circle.fit.total_planar_length) + h2);
 
     tc->target = helical_length;
@@ -799,6 +802,9 @@ int tcUpdateTargetFromCircle(TC_STRUCT * const tc)
 
 
 
+/*
+ * pmRigidTapInit — 初始化刚性攻丝运动
+ */
 int pmRigidTapInit(PmRigidTap * const tap,
         EmcPose const * const start,
         EmcPose const * const end,
@@ -807,18 +813,17 @@ int pmRigidTapInit(PmRigidTap * const tap,
     PmCartesian start_xyz, end_xyz;
     PmCartesian abc, uvw;
 
-    //Slightly more allocation this way, but much easier to read
     emcPoseToPmCartesian(start, &start_xyz, &abc, &uvw);
     emcPoseGetXYZ(end, &end_xyz);
 
-    // Setup XYZ motion
+    // 初始化 XYZ 直线运动（从起点到终点） */
     pmCartLineInit(&tap->xyz, &start_xyz, &end_xyz);
 
-    // Copy over fixed ABC and UVW points
+    // ABC 和 UVW 在刚性攻丝过程中保持固定 */
     tap->abc = abc;
     tap->uvw = uvw;
 
-    // Setup initial tap state
+    // reversal_target 是攻丝底部的目标距离 */
     tap->reversal_target = tap->xyz.tmag;
     tap->reversal_scale = reversal_scale;
     tap->state = RIGIDTAP_START;
@@ -826,17 +831,20 @@ int pmRigidTapInit(PmRigidTap * const tap,
 
 }
 
+/*
+ * pmRigidTapTarget — 计算刚性攻丝的总目标距离
+ */
 double pmRigidTapTarget(PmRigidTap * const tap, double uu_per_rev)
 {
-    // allow 10 turns of the spindle to stop - we don't want to just go on forever
+    /* 假设主轴需要 10 转才能完全停止 */
     double overrun = 10. * uu_per_rev;
     double target = tap->xyz.tmag + overrun;
-    // tp_debug_print("initial tmag = %.12g, added %.12g for overrun, target = %.12g\n",
-            // tap->xyz.tmag, overrun,target);
     return target;
 }
 
-/** Returns true if segment has ONLY rotary motion, false otherwise. */
+/*
+ * tcPureRotaryCheck — 检查是否仅有旋转运动
+ */
 int tcPureRotaryCheck(TC_STRUCT const * const tc)
 {
     return (tc->motion_type == TC_LINEAR) &&
@@ -846,8 +854,7 @@ int tcPureRotaryCheck(TC_STRUCT const * const tc)
 
 
 /**
- * Given a PmCircle and a circular segment, copy the circle in as the XYZ portion of the segment, then update the motion parameters.
- * NOTE: does not yet support ABC or UVW motion!
+ * tcSetCircleXYZ — 用新的圆弧几何替换 TC 中的 XYZ 圆弧
  */
 int tcSetCircleXYZ(TC_STRUCT * const tc, PmCircle const * const circ)
 {
@@ -861,31 +868,31 @@ int tcSetCircleXYZ(TC_STRUCT * const tc, PmCircle const * const circ)
         return TP_ERR_FAIL;
     }
 
-    // Store the new circular segment (or use the current one)
-
     if (!circ) {
         rtapi_print_msg(RTAPI_MSG_ERR, "SetCircleXYZ missing new circle definition\n");
         return TP_ERR_FAIL;
     }
 
+    /* 替换圆弧数据 */
     tc->coords.circle.xyz = *circ;
-    // Update the arc length fit to this new segment
+    /* 重新计算螺旋拟合系数 */
     findSpiralArcLengthFit(&tc->coords.circle.xyz, &tc->coords.circle.fit);
 
-    // compute the new total arc length using the fit and store as new
-    // target distance
+    // 重新计算总目标距离 */
     tc->target = pmCircle9Target(&tc->coords.circle);
 
     return TP_ERR_OK;
 }
 
+/*
+ * tcClearFlags — 清除 TC 的临时状态标志
+ */
 int tcClearFlags(TC_STRUCT * const tc)
 {
     if (!tc) {
         return TP_ERR_MISSING_INPUT;
     }
 
-    //KLUDGE this will need to be updated manually if any other flags are added.
     tc->is_blending = false;
 
     return TP_ERR_OK;

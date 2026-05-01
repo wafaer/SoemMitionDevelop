@@ -1,3 +1,0 @@
-/home/wg/soem/SoemMitionDevelop/cmake-build-debug/CMakeFiles/SoemMotroControl.dir
-/home/wg/soem/SoemMitionDevelop/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/wg/soem/SoemMitionDevelop/cmake-build-debug/CMakeFiles/rebuild_cache.dir

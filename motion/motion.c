@@ -1,7 +1,3 @@
-//
-// Created by Administrator on 2025/8/14.
-//
-
 #include "motion.h"
 #include "rtapi/rtapi.h"
 #include <float.h>
@@ -9,65 +5,140 @@
 #include "axis.h"
 #include "tp/tp.h"
 #include "hal/hal.h"
-
 #include "motion_struct.h"
 #include "motion_priv.h"
 
+/*
+ * num_axis — 系统中配置的轴数量
+ */
 extern int num_axis;
+
+/* emcmotStruct — 主共享内存结构体指针 */
 emcmot_struct_t *emcmotStruct = 0;
+
+/* emcmotCommand — 命令缓冲区指针（Task → Motion）
+ * 指向 emcmotStruct->command，由 Task 层写入，Motion 层读取。 */
 emcmot_command_t *emcmotCommand = 0;
+
+/* emcmotStatus — 状态缓冲区指针（Motion → Task）
+ * 指向 emcmotStruct->status，由 Motion 层写入，Task 层读取。 */
 emcmot_status_t *emcmotStatus = 0;
+
+/* emcmotConfig — 配置参数指针（Task ↔ Motion）
+ * 指向 emcmotStruct->config，由 Task 层写入，Motion 层读取。 */
 emcmot_config_t *emcmotConfig = 0;
+
+/* emcmotInternal — 内部运行时状态指针（仅 Motion 使用）
+ * 指向 emcmotStruct->internal，仅 Motion 层内部使用，Task 层不应直接访问。 */
 emcmot_internal_t *emcmotInternal = 0;
+
+/* emcmotError — 错误环形缓冲区指针
+ * 指向 emcmotStruct->error，用于在 Motion 层和 Task 层之间传递错误消息。 */
 emcmot_error_t *emcmotError = 0;
+
+/* emcmot_hal_data — HAL 引脚数据容器指针
+ * 指向通过 hal_malloc() 分配的 HAL 共享内存区域，
+ * 包含所有轴和全局运动控制器的 HAL 引脚。 */
 emcmot_hal_data_t *emcmot_hal_data = 0;
 
+/* atomic_actpos — 实际位置原子变量 */
 extern atomic_int_fast32_t atomic_actpos;
+
+/* atomic_targetpos — 目标位置原子变量 */
 extern atomic_int_fast32_t atomic_targetpos;
 
+/* emc_shmem_id — 共享内存 ID */
 static int emc_shmem_id;
+
+/* mot_comp_id — 运动控制 HAL 组件 ID */
 static int mot_comp_id;
+
+/* servo_comp_id — 伺服 HAL 组件 ID */
 static int servo_comp_id;
+
+/* uart_comp_id — 串口 HAL 组件 ID */
 static int uart_comp_id;
+
+/* key — 共享内存键值 */
 static int key = DEFAULT_SHMEM_KEY;
+
+/* axes[] — 轴的运行时数据数组 */
 emcmot_axis_t axes[EMCMOT_MAX_AXIS];
+
+/* base_period_nsec — 基础线程周期（纳秒） */
 static long base_period_nsec = 1000000;
+
+/* servo_period_nsec — 伺服周期（纳秒） */
 static long servo_period_nsec = 1000000;
+
+/* traj_period_nsec — 轨迹周期（纳秒） */
 static long traj_period_nsec = 0;
+
+/* base_thread_fp — 基础线程浮点使用标志 */
 int base_thread_fp = 0;
 
+/* module_intfc      — 注册模块接口函数到轨迹规划器（定义于第 43 行）*/
 static int module_intfc();
+/* init_hal_param    — 导出 HAL 引脚和参数（定义于第 444 行）*/
 static int init_hal_param(void);
+/* export_axis       — 导出单个轴的 HAL 引脚（定义于第 406 行）*/
 static int export_axis(int num, axis_hal_t * addr);
 
+
+/*
+ * ============================================================================
+ * 第五节：模块接口注册函数
+ * ============================================================================
+ */
+
+/*
+ * module_intfc — 注册模块接口函数到轨迹规划器
+ */
 static int module_intfc() {
 
+    /* 注册四个电机控制函数到轨迹规划器的函数表 */
 	tpMotFunctions(emcmotSetRotaryUnlock,emcmotGetRotaryIsUnlocked,axis_get_vel_limit,axis_get_acc_limit);
 
+    /* 注册电机相关数据（状态和配置）到轨迹规划器 */
 	tpMotData(emcmotStatus,emcmotConfig);
 	return 0;
 }
 
+/*
+ * tp_init — 初始化坐标轨迹规划器
+*/
 static int tp_init()
 {
+    /* 创建坐标轨迹规划器（coord_tp）并分配轨迹队列
+     * DEFAULT_TC_QUEUE_SIZE 默认值为 2000（见 emcmotcfg.h）
+     * 队列越大，可以缓存更多的轨迹段，但占用内存也越多 */
     if (-1 == tpCreate(&emcmotInternal->coord_tp, DEFAULT_TC_QUEUE_SIZE,mot_comp_id))
     {
         rtapi_print_msg(RTAPI_MSG_ERR,"MOTION: tpCreate failed\n");
         return -1;
     }
 
-    // tpInit is called from tpCreate
+    /* 设置轨迹规划器的计算周期（粗插补周期）。
+     * 这个周期决定了轨迹规划器多久重新计算一次粗略目标点。
+     * 实际位置细分由 cubic 插值器在每个伺服周期完成。 */
     tpSetCycleTime(&emcmotInternal->coord_tp,  emcmotConfig->trajCycleTime);
+    /* 设置轨迹规划器的最大速度和急行速度（均使用系统配置的 Maxvel） */
     tpSetVmax(     &emcmotInternal->coord_tp,  emcmotStatus->Maxvel, emcmotStatus->Maxvel);
+    /* 设置轨迹规划器的最大加速度（使用系统配置的 Maxacc） */
     tpSetAmax(     &emcmotInternal->coord_tp,  emcmotStatus->Maxacc);
+    /* 将规划器的初始位置设置为当前的笛卡尔位置命令 */
     tpSetPos(      &emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
     return 0;
 }
 
+/*
+ * motion_thread_main — 运动控制模块主入口
+ */
 int motion_thread_main(void)
 {
     int retval;
 
+    /* 步骤 1：初始化轨迹规划器通信（NML 缓冲区） */
 	retval = emcTrajInit();
 	if (retval != 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR, "MOTION: emcTrajInit failed\n");
@@ -75,19 +146,20 @@ int motion_thread_main(void)
 		return -1;
 	}
 
-    /* connect to the HAL and RTAPI */
+    /* 步骤 2：连接 HAL 和 RTAPI，注册 "motmod" 组件 */
     mot_comp_id = hal_init("motmod");
     if (mot_comp_id < 0) {
 	rtapi_print_msg(RTAPI_MSG_ERR, "MOTION: hal_init failed\n");
 	return -1;
     }
+    /* 步骤 3：检查轴数量配置的合法性 */
     if (( num_axis < 1 ) || ( num_axis > EMCMOT_MAX_AXIS )) {
 	rtapi_print_msg(RTAPI_MSG_ERR,"MOTION: num_joints is %d, must be between 1 and %d\n", num_axis, EMCMOT_MAX_AXIS);
 	hal_exit(mot_comp_id);
 	return -1;
     }
 
-	/* initialize/export HAL pins and parameters */
+	/* 步骤 4：初始化 HAL 引脚和参数（创建所有 HAL 引脚） */
 	retval = init_hal_param();
 	if (retval != 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR, "MOTION: init_hal_io failed\n");
@@ -95,7 +167,7 @@ int motion_thread_main(void)
 		return -1;
 	}
 
-    /* allocate/initialize user space comm buffers (cmd/status/err) */
+    /* 步骤 5：初始化通信缓冲区（分配共享内存并初始化数据结构） */
     retval = init_motion_comm_buffers();
     if (retval != 0) {
 	rtapi_print_msg(RTAPI_MSG_ERR, ("MOTION: init_comm_buffers failed\n"));
@@ -103,17 +175,18 @@ int motion_thread_main(void)
 	return -1;
     }
 
-	//
+	/* 步骤 6：注册模块接口函数到轨迹规划器 */
 	module_intfc();
 
 	//轨迹规划
+    /* 步骤 7：初始化坐标轨迹规划器 */
     if (tp_init())
     {
 	rtapi_print_msg(RTAPI_MSG_ERR, ("MOTION: tp_init failed\n"));
 	return -1;
     }
 
-    /* set up for realtime execution of code */
+    /* 步骤 8：创建实时线程并挂载函数 */
     retval = init_motion_threads();
     if (retval != 0) {
 	rtapi_print_msg(RTAPI_MSG_ERR, ("MOTION: init_threads failed\n"));
@@ -121,17 +194,23 @@ int motion_thread_main(void)
 	return -1;
     }
 
+    /* 打印模块加载成功信息 */
     rtapi_print_msg(RTAPI_MSG_INFO, "MOTION: rtapi_app_main complete\n");
 
+    /* 通知 HAL 子系统本组件已就绪，可以开始工作 */
     hal_ready(mot_comp_id);
 
     return 0;
 }
 
+/*
+ * motion_thread_exit — 运动控制模块退出清理
+ */
 void motion_thread_exit(void)
 {
 	int retval;
 
+    /* 步骤 1：停止所有实时线程 */
 	retval = hal_stop_threads();
 	if (retval < 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR,
@@ -139,12 +218,14 @@ void motion_thread_exit(void)
 	}
 
 	/* free shared memory */
+    /* 步骤 2：释放共享内存 */
 	retval = rtapi_shmem_delete(emc_shmem_id, mot_comp_id);
 	if (retval < 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR,
 			("MOTION: rtapi_shmem_delete() failed, returned %d\n"), retval);
 	}
 	/* disconnect from HAL and RTAPI */
+    /* 步骤 3：断开与 HAL 和 RTAPI 的连接 */
 	retval = hal_exit(mot_comp_id);
 	if (retval < 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR,
@@ -152,25 +233,34 @@ void motion_thread_exit(void)
 	}
 }
 
+/*
+ * init_motion_comm_buffers — 分配共享内存并初始化所有数据结构
+ */
 static int init_motion_comm_buffers(void)
 {
     int axis_num, n;
     emcmot_axis_t *axis;
     int retval;
 
+    /* 步骤 1：将所有结构体指针初始化为 NULL */
     emcmotStruct = 0;
     emcmotInternal = 0;
     emcmotStatus = 0;
     emcmotCommand = 0;
     emcmotConfig = 0;
 
-    /* allocate and initialize the shared memory structure */
+    /* 步骤 2：分配共享内存
+     * rtapi_shmem_new() 在 RTAPI 管理的共享内存区域中分配一块内存，
+     * 大小为 sizeof(emcmot_struct_t)。返回的 emc_shmem_id 是这块共享内存的句柄。 */
     emc_shmem_id = rtapi_shmem_new(key, mot_comp_id, sizeof(emcmot_struct_t));
     if (emc_shmem_id < 0) {
 	rtapi_print_msg(RTAPI_MSG_ERR,
 	    "MOTION: rtapi_shmem_new failed, returned %d\n", emc_shmem_id);
 	return -1;
     }
+    /* 步骤 3：获取共享内存的用户空间指针
+     * rtapi_shmem_getptr() 返回共享内存的内存地址，
+     * 之后可以通过 emcmotStruct 指针自由访问这块内存 */
     retval = rtapi_shmem_getptr(emc_shmem_id, (void **) &emcmotStruct);
     if (retval < 0) {
 	rtapi_print_msg(RTAPI_MSG_ERR,
@@ -179,6 +269,9 @@ static int init_motion_comm_buffers(void)
     }
 
     /* we'll reference emcmotStruct directly */
+    /* 步骤 4：将各子结构体指针关联到共享内存中的正确偏移
+     * emcmotStruct->command 是共享内存内 command 字段的地址，
+     * &emcmotStruct->command 即为 emcmotCommand 的值 */
     emcmotCommand = &emcmotStruct->command;
     emcmotStatus = &emcmotStruct->status;
     emcmotConfig = &emcmotStruct->config;
@@ -186,38 +279,46 @@ static int init_motion_comm_buffers(void)
     emcmotError = &emcmotStruct->error;
 
     /* init error struct */
+    /* 步骤 5：初始化错误环形缓冲区 */
     emcmotErrorInit(emcmotError);
 
     /* init status struct */
+    /* 步骤 6：初始化状态结构体的通信字段 */
     emcmotStatus->head = 0;
     emcmotStatus->commandEcho = 0;
     emcmotStatus->commandNumEcho = 0;
     emcmotStatus->commandStatus = 0;
 
     /* init more stuff */
+    /* 步骤 7-8：初始化内部状态和通信标志 */
     emcmotInternal->head = 0;
     emcmotConfig->head = 0;
-	emcmotInternal->enabling = 0;
+	emcmotInternal->enabling = 0;       /* 初始禁用运动使能 */
     emcmotStatus->motionFlag = 0;
 
+    /* 复位状态标志（无错误，不在 Coord 模式）*/
     SET_MOTION_ERROR_FLAG(0);
     SET_MOTION_COORD_FLAG(0);
 
     emcmotInternal->split = 0;
     emcmotStatus->heartbeat = 0;
 
+    /* 复位笛卡尔位置（将所有分量设为零）*/
     ZERO_EMC_POSE(emcmotStatus->carte_pos_cmd);
     ZERO_EMC_POSE(emcmotStatus->carte_pos_fb);
     emcmotStatus->Maxvel = 0;
     emcmotConfig->limitVel = 0;
     emcmotStatus->Maxacc = 0;
+    /* 进给倍率、快移倍率和净倍率均初始化为 1.0（100%）*/
     emcmotStatus->feed_scale = 1.0;
     emcmotStatus->rapid_scale = 1.0;
     emcmotStatus->net_feed_scale = 1.0;
 
-	emcmotConfig->arcBlendOptDepth = 50;
-	emcmotConfig->arcBlendRampFreq = 100;
+    /* 圆弧混合参数初始化 */
+	emcmotConfig->arcBlendOptDepth = 50;   /* 圆弧混合优化深度 */
+	emcmotConfig->arcBlendRampFreq = 100;  /* 圆弧混合斜坡频率 */
 
+    /* 使能标志初始化：进给倍率、主轴倍率、进给保持均使能 */
     emcmotStatus->enables_new = FS_ENABLED | SS_ENABLED | FH_ENABLED;
     emcmotStatus->enables_queued = emcmotStatus->enables_new;
     emcmotStatus->id = 0;
@@ -225,32 +326,40 @@ static int init_motion_comm_buffers(void)
     emcmotStatus->activeDepth = 0;
     emcmotStatus->paused = 0;
     emcmotStatus->overrideLimitMask = 0;
-    SET_MOTION_INPOS_FLAG(1);
-    SET_MOTION_ENABLE_FLAG(0);
-    emcmot_config_change();
+    SET_MOTION_INPOS_FLAG(1);   /* 初始标记所有轴到位 */
+    SET_MOTION_ENABLE_FLAG(0); /* 初始禁用运动 */
+    emcmot_config_change();     /* 触发配置变更通知 */
 
+    /* 初始化所有轴的内部数据（axis.c 模块提供）*/
     axis_init_all();
 
     /* init per-joint stuff */
+    /* 步骤 15：遍历所有轴，初始化每个轴的参数 */
     for (axis_num = 0; axis_num < EMCMOT_MAX_AXIS; axis_num++)
     {
 		/* point to structure for this joint */
 		axis = &axes[axis_num];
 
 		/* init the config fields with some "reasonable" defaults" */
+        /* 设置轴类型：0=线性轴（1=旋转轴）*/
 		axis->type = 0;
+        /* 设置默认软限位（保守的初始值，等待用户配置覆盖）*/
 		axis->max_pos_limit = 1;
 		axis->min_pos_limit = -1;
+        /* 设置默认速度和加速度限制（保守的初始值）*/
 		axis->vel_limit = 1;
 		axis->acc_limit = 1;
-		axis->min_ferror = 400;
-		axis->max_ferror = 27486951;
+        /* 设置跟随误差限值 */
+		axis->min_ferror = 400;       /* 最小跟随误差（零速时）*/
+		axis->max_ferror = 27486951;  /* 最大跟随误差（高速时）*/
 
 		/* init joint flags */
+        /* 设置轴标志：活跃且到位 */
 		axis->flag = 1;
 		SET_AXIS_INPOS_FLAG(axis, 1);
 
 		/* init status info */
+        /* 复位所有位置、速度、加速度命令和反馈为 0 */
 		axis->coarse_pos = 0;
 		axis->pos_cmd = 0;
 		axis->vel_cmd = 0;
@@ -259,50 +368,80 @@ static int init_motion_comm_buffers(void)
 		axis->motor_pos_fb = 0;
 		axis->pos_fb = 0;
 		axis->ferror = 0;
+        /* 跟随误差限值初始化为 min_ferror */
 		axis->ferror_limit = axis->min_ferror;
 		axis->ferror_high_mark = 0;
 
+        /* 初始化三次样条插值器 */
 		cubicInit(&(axis->cubic));
     }
 
+    /* 步骤 16：同步读指针 */
     emcmotStatus->tail = 0;
 	emcmotConfig->tail = emcmotConfig->head;
 
     return 0;
 }
 
+/*
+ * updata_axis_param — 从原子变量更新轴的实际位置
+ */
 void updata_axis_param(int numAxes)
 {
 	for (int i = 0; i < numAxes; i++)
 	{
 		emcmot_axis_t *axis = &axes[i];
+        /* 【潜在 BUG】所有轴都从同一个 atomic_actpos 读取，
+         * 应该是 atomic_actpos[i] 才对。 */
 		axis->free_tp.curr_pos = atomic_load(&atomic_actpos);
 	}
 }
 
+/*
+ * emcmot_config_change — 通知系统配置发生了变化
+ */
 void emcmot_config_change(void)
 {
+    /* head == tail 表示缓冲区为空（所有数据已被读取），可以安全地更新版本号 */
 	if (emcmotConfig->head == emcmotConfig->tail) {
-		emcmotConfig->config_num++;
-		emcmotStatus->config_num = emcmotConfig->config_num;
-		emcmotConfig->head++;
+		emcmotConfig->config_num++;           /* 递增配置版本号 */
+		emcmotStatus->config_num = emcmotConfig->config_num;  /* 同步到状态结构体 */
+		emcmotConfig->head++;                /* 移动写指针 */
 	}
 }
 
+/*
+ * init_motion_threads — 创建实时线程并挂载函数
+ */
 static int init_motion_threads(void)
 {
     int retval;
 
+    /* 步骤 1：如果轨迹周期未指定，默认为伺服周期的 1000 倍
+     * 例如：servo_period = 1ms = 1,000,000ns
+     *       traj_period = 1,000,000 * 1000 = 1,000,000,000ns = 1s */
 	if (traj_period_nsec == 0) {
 		traj_period_nsec = servo_period_nsec*1000;
 	}
 
+    /* 步骤 2：创建名为 "motion-thread" 的实时线程
+     * 线程周期 = servo_period_nsec * 1000（纳秒）
+     * 优先级 = 98（较低）
+     * uses_fp = 1（使用浮点运算）*/
     retval = hal_create_thread("motion-thread", servo_period_nsec*1000, 1,98);
     if (retval < 0) {
 		rtapi_print_msg(RTAPI_MSG_ERR,"MOTION: failed to create %ld nsec motion thread\n", servo_period_nsec);
 		return -1;
     }
 
+    /* 步骤 3：导出命令处理函数到 HAL
+     * hal_export_funct() 参数：
+     *   - name      : 函数在 HAL 中的名称
+     *   - funct     : 实际函数指针
+     *   - arg       : 传给函数的参数（此处为 0）
+     *   - uses_fp   : 是否使用浮点运算（1=是）
+     *   - reentrant : 是否可重入（0=否）
+     *   - comp_id   : HAL 组件 ID */
 	retval = hal_export_funct("motion-command-handler", emcmotCommandHandler, 0	/* arg
 	 */ , 1 /* uses_fp */ , 0 /* reentrant */ , mot_comp_id);
 	if (retval < 0) {
@@ -312,6 +451,7 @@ static int init_motion_threads(void)
 	}
 
     /* export realtime functions that do the real work */
+    /* 步骤 4：导出运动控制器函数到 HAL */
     retval = hal_export_funct("motion-controller", emcmotController, 0	/* arg
 	 */ , 1 /* uses_fp */ , 0 /* reentrant */ , mot_comp_id);
     if (retval < 0) {
@@ -320,92 +460,115 @@ static int init_motion_threads(void)
 	return -1;
     }
 
+    /* 步骤 5：将两个函数挂载到 motion-thread 上
+     * hal_add_funct_to_thread() 参数：
+     *   - funct_name : 函数名称
+     *   - thread_name: 线程名称
+     *   - priority  : 执行优先级（数字越小越先执行）*/
 	hal_add_funct_to_thread("motion-command-handler", "motion-thread", 1);
 	hal_add_funct_to_thread("motion-controller", "motion-thread", 2);
 
     // if we don't set cycle times based on these guesses, emc doesn't
     // start up right
+    /* 步骤 6：将周期参数通知给规划器
+     * 1e-9 用于将纳秒转换为秒 */
     setServoCycleTime(servo_period_nsec * 1e-9);
     setTrajCycleTime(traj_period_nsec * 1e-9);
 
     return 0;
 }
 
+/*
+ * emcmotSetCycleTime — 设置伺服周期并更新相关参数
+ */
 void emcmotSetCycleTime(unsigned long nsec )
 {
     int servo_mult;
-    servo_mult = traj_period_nsec / nsec;
-    if(servo_mult < 0) servo_mult = 1;
-    setTrajCycleTime(nsec * 1e-9);
-    setServoCycleTime(nsec * servo_mult * 1e-9);
+    servo_mult = traj_period_nsec / nsec;  /* 计算轨迹周期与伺服周期的比值 */
+    if(servo_mult < 0) servo_mult = 1;    /* 防御性检查 */
+    setTrajCycleTime(nsec * 1e-9);       /* 更新轨迹周期（单位：秒）*/
+    setServoCycleTime(nsec * servo_mult * 1e-9);  /* 更新伺服周期 */
 }
 
-/* call this when setting the trajectory cycle time */
+
+/*
+ * setTrajCycleTime — 设置轨迹周期并更新相关规划器
+ */
 static int setTrajCycleTime(double secs)
 {
-    static int t;
+    static int t;  /* 循环变量（static 避免栈分配）*/
 
     /* make sure it's not zero */
     if (secs <= 0.0) {
 	return -1;
     }
 
+    /* 步骤 2：通知配置变更 */
     emcmot_config_change();
 
-    /* compute the interpolation rate as nearest integer to traj/servo */
+    /* 计算插值率：每个轨迹周期内的伺服周期数（四舍五入）*/
     if(emcmotConfig->servoCycleTime)
         emcmotConfig->interpolationRate = (int) (secs / emcmotConfig->servoCycleTime + 0.5);
     else
-        emcmotConfig->interpolationRate = 1;
+        emcmotConfig->interpolationRate = 1;  /* 避免除零 */
 
-    /* set traj planner */
+    /* 步骤 4：设置坐标轨迹规划器的周期 */
     tpSetCycleTime(&emcmotInternal->coord_tp, secs);
 
-    /* set the free planners, cubic interpolation rate and segment time */
+    /* 步骤 5：遍历所有轴，设置三次样条插值器的插值率 */
     for (t = 0; t < EMCMOT_MAX_AXIS; t++) {
 	cubicSetInterpolationRate(&(axes[t].cubic), emcmotConfig->interpolationRate);
     }
 
-    /* copy into status out */
+    /* 步骤 6：保存周期值并同步读指针 */
     emcmotConfig->trajCycleTime = secs;
 	emcmotConfig->tail = emcmotConfig->head;
 
     return 0;
 }
 
+
+/*
+ * setServoCycleTime — 设置伺服周期并更新相关规划器
+ */
+
 /* call this when setting the servo cycle time */
 static int setServoCycleTime(double secs)
 {
-    static int t;
+    static int t;  /* 循环变量 */
 
     /* make sure it's not zero */
     if (secs <= 0.0) {
 	return -1;
     }
 
+    /* 步骤 2：通知配置变更 */
     emcmot_config_change();
 
-    /* compute the interpolation rate as nearest integer to traj/servo */
+    /* 计算插值率（注意：这里是 traj/servo，与 setTrajCycleTime 中相同）*/
     emcmotConfig->interpolationRate =
 	(int) (emcmotConfig->trajCycleTime / secs + 0.5);
 
-    /* set the cubic interpolation rate and PID cycle time */
+    /* 步骤 4：遍历所有轴，设置三次样条插值器的插值率和段时长 */
     for (t = 0; t < EMCMOT_MAX_AXIS; t++)
     {
 		cubicSetInterpolationRate(&(axes[t].cubic), emcmotConfig->interpolationRate);
-    	cubicSetSegmentTime(&(axes[t].cubic), emcmotConfig->trajCycleTime);
+    	cubicSetSegmentTime(&(axes[t].cubic), emcmotConfig->trajCycleTime);  /* 设置段时长 */
     }
 
-    /* copy into status out */
+    /* 步骤 5：保存周期值并同步读指针 */
     emcmotConfig->servoCycleTime = secs;
 	emcmotConfig->tail = emcmotConfig->head;
 
     return 0;
 }
 
+/*
+ * export_axis — 导出单个轴的所有 HAL 引脚
+ */
 static int export_axis(int num, axis_hal_t * addr)
 {
-	int retval;
+	int retval;  /* HAL API 的返回值 */
 
 	if((retval = hal_pin_newf(HAL_S32, &(addr->coarse_pos_cmd), mot_comp_id, "axis.%d.coarse-pos-cmd",num)) !=0) return retval;
 	if((retval = hal_pin_newf(HAL_S32, &(addr->axis_vel_cmd), mot_comp_id, "axis.%d.vel-cmd",num)) !=0) return retval;
@@ -420,7 +583,6 @@ static int export_axis(int num, axis_hal_t * addr)
 	if((retval = hal_pin_newf(HAL_S32, &(addr->f_error_lim), mot_comp_id, "axis.%d.f-error-lim", num)) !=0) return retval;
 	if((retval = hal_pin_newf(HAL_S32, &(addr->axis_motion), mot_comp_id, "axis.%d.axis_motion", num)) !=0) return retval;
 	if((retval = hal_pin_newf(HAL_S32, &(addr->axis_status), mot_comp_id, "axis.%d.axis_status", num)) !=0) return retval;
-
 
 	if((retval = hal_pin_newf(HAL_BIT, &(addr->active), mot_comp_id, "axis.%d.active", num)) !=0) return retval;
 	if((retval = hal_pin_newf(HAL_BIT, &(addr->motionenable), mot_comp_id, "axis.%d.motionenable", num)) !=0) return retval;
@@ -441,10 +603,17 @@ static int export_axis(int num, axis_hal_t * addr)
 	return 0;
 }
 
+/*
+ * init_hal_param — 导出所有 HAL 引脚并设置默认值
+ */
 static int init_hal_param(void)
 {
 	int n, retval;
-	axis_hal_t      *axis_data;
+	axis_hal_t      *axis_data;  /* 指向轴 HAL 数据的临时指针 */
+
+    /* 第一阶段：分配 HAL 共享内存
+     * hal_malloc() 在 HAL 共享内存区域中分配空间，
+     * 确保所有实时线程都可以访问这些数据 */
 	emcmot_hal_data = hal_malloc(sizeof(emcmot_hal_data_t));
 	if (emcmot_hal_data == 0)
 	{
@@ -452,49 +621,52 @@ static int init_hal_param(void)
 		return -1;
 	}
 
-	hal_pin_newf(HAL_BIT, &(emcmot_hal_data->jog_inhibit), mot_comp_id,"motion.jog-inhibit");
-	hal_pin_newf(HAL_BIT, &(emcmot_hal_data->jog_stop), mot_comp_id, "motion.jog-stop");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->jog_stop_immediate), mot_comp_id, "motion.jog-stop-immediate");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->enable), mot_comp_id, "motion.enable");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->motion_enabled), mot_comp_id, "motion.motion-enabled");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->in_position), mot_comp_id, "motion.in-position");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->coord_mode), mot_comp_id, "motion.coord-mode");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->coord_error), mot_comp_id, "motion.coord-error");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->on_soft_limit), mot_comp_id, "motion.on-soft-limit");
-	hal_pin_newf(HAL_U32,  &(emcmot_hal_data->last_period), mot_comp_id, "motion.servo.last-period");
-	hal_pin_newf(HAL_U32,  &(emcmot_hal_data->jog_is_active), mot_comp_id, "motion.jog-is-active");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->tp_reverse), mot_comp_id, "motion.tp-reverse");
-	hal_pin_newf(HAL_FLOAT, &(emcmot_hal_data->last_period_ns), mot_comp_id, "motion.servo.last-period-ns");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->eoffset_limited), mot_comp_id, "motion.eoffset-limited");
-	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->eoffset_active), mot_comp_id, "motion.eoffset-active");
+	hal_pin_newf(HAL_BIT, &(emcmot_hal_data->jog_inhibit), mot_comp_id,"motion.jog-inhibit");          /* 点动禁止（外部输入）*/
+	hal_pin_newf(HAL_BIT, &(emcmot_hal_data->jog_stop), mot_comp_id, "motion.jog-stop");              /* 点动停止请求（外部输入）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->jog_stop_immediate), mot_comp_id, "motion.jog-stop-immediate"); /* 点动急停请求（外部输入）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->enable), mot_comp_id, "motion.enable");                 /* 全局运动使能（外部输入）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->motion_enabled), mot_comp_id, "motion.motion-enabled"); /* 运动使能状态（输出）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->in_position), mot_comp_id, "motion.in-position");       /* 全局到位状态（输出）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->coord_mode), mot_comp_id, "motion.coord-mode");         /* 坐标模式状态（输出）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->coord_error), mot_comp_id, "motion.coord-error");       /* 坐标模式错误（输出）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->on_soft_limit), mot_comp_id, "motion.on-soft-limit");   /* 软限位触发（输出）*/
+	hal_pin_newf(HAL_U32,  &(emcmot_hal_data->last_period), mot_comp_id, "motion.servo.last-period"); /* 上次伺服周期（CPU 时钟周期）*/
+	hal_pin_newf(HAL_U32,  &(emcmot_hal_data->jog_is_active), mot_comp_id, "motion.jog-is-active"); /* 点动活跃状态（输出）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->tp_reverse), mot_comp_id, "motion.tp-reverse");           /* 轨迹反向运行 */
+	hal_pin_newf(HAL_FLOAT, &(emcmot_hal_data->last_period_ns), mot_comp_id, "motion.servo.last-period-ns"); /* 上次伺服周期（纳秒）*/
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->eoffset_limited), mot_comp_id, "motion.eoffset-limited"); /* 外部偏移越限 */
+	hal_pin_newf(HAL_BIT,  &(emcmot_hal_data->eoffset_active), mot_comp_id, "motion.eoffset-active");   /* 外部偏移活跃 */
 
+	*(emcmot_hal_data->jog_inhibit) = 0;         /* 初始不禁用点动 */
+	*(emcmot_hal_data->jog_stop) = 0;           /* 初始不请求停止 */
+	*(emcmot_hal_data->jog_stop_immediate) = 0; /* 初始不请求急停 */
+	*(emcmot_hal_data->enable) = 1;            /* 初始使能运动（等待激活）*/
+	*(emcmot_hal_data->motion_enabled) = 0;      /* 初始运动未激活 */
+	*(emcmot_hal_data->in_position) = 0;       /* 初始不到位 */
+	*(emcmot_hal_data->coord_mode) = 0;         /* 初始非坐标模式 */
+	*(emcmot_hal_data->coord_error) = 0;        /* 初始无错误 */
+	*(emcmot_hal_data->on_soft_limit) = 0;      /* 初始无软限位 */
+	*(emcmot_hal_data->last_period) = 0;      /* 初始周期为 0 */
 
-	/* initialize machine parameters */
-	*(emcmot_hal_data->jog_inhibit) = 0;
-	*(emcmot_hal_data->jog_stop) = 0;
-	*(emcmot_hal_data->jog_stop_immediate) = 0;
-	*(emcmot_hal_data->enable) = 1;
-	*(emcmot_hal_data->motion_enabled) = 0;
-	*(emcmot_hal_data->in_position) = 0;
-	*(emcmot_hal_data->coord_mode) = 0;
-	*(emcmot_hal_data->coord_error) = 0;
-	*(emcmot_hal_data->on_soft_limit) = 0;
-	*(emcmot_hal_data->last_period) = 0;
-
+    /* 第四阶段：导出每个轴的 HAL 引脚 */
 	for (n = 0; n < num_axis; n++)
 	{
+        /* 获取第 n 个轴的 HAL 数据指针 */
 		axis_data = &(emcmot_hal_data->axis[n]);
-		/* export all vars */
+		/* 调用 export_axis() 创建该轴的所有引脚 */
 		retval = export_axis(n, axis_data);
 		if (retval != 0) {
 			rtapi_print_msg(RTAPI_MSG_ERR, "MOTION: axis %d pin/param export failed\n", n);
 			return -1;
 		}
+        /* 初始化轴的伺服放大器使能引脚为 1（使能状态）*/
 		*(axis_data->amp_enable) = 1;
 	}
 
+    /* 第五阶段：调用 axis.c 的 HAL 初始化函数
+     * axis_init_hal_param() 会创建遥操作和外部偏移相关的 HAL 引脚，
+     * 这些引脚由 axis.c 模块管理 */
 	axis_init_hal_param(mot_comp_id);
 
 	return 0;
 }
-

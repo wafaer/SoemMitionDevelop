@@ -1,4 +1,16 @@
-/opt/clion-2025.3.4/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "Unix Makefiles" -S /home/wg/soem/SoemMitionDevelop -B /home/wg/soem/SoemMitionDevelop/cmake-build-debug
+"F:\install\clion\CLion 2025.1.7\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug -G "MinGW Makefiles" -S F:\MotionControl\clion -B F:\MotionControl\clion\cmake-build-debug
+-- The C compiler identification is GNU 13.1.0
+-- The CXX compiler identification is GNU 13.1.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: F:/install/clion/CLion 2025.1.7/bin/mingw/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: F:/install/clion/CLion 2025.1.7/bin/mingw/bin/g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
 CMake Warning (dev) at CMakeLists.txt:13 (find_package):
   Policy CMP0167 is not set: The FindBoost module is removed.  Run "cmake
   --help-policy CMP0167" for policy details.  Use the cmake_policy command to
@@ -6,6 +18,12 @@ CMake Warning (dev) at CMakeLists.txt:13 (find_package):
 
 This warning is for project developers.  Use -Wno-dev to suppress it.
 
--- Configuring done (0.1s)
--- Generating done (0.0s)
--- Build files have been written to: /home/wg/soem/SoemMitionDevelop/cmake-build-debug
+CMake Error at F:/install/clion/CLion 2025.1.7/bin/cmake/win/x64/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake:233 (message):
+  Could NOT find Boost (missing: Boost_INCLUDE_DIR)
+Call Stack (most recent call first):
+  F:/install/clion/CLion 2025.1.7/bin/cmake/win/x64/share/cmake-3.31/Modules/FindPackageHandleStandardArgs.cmake:603 (_FPHSA_FAILURE_MESSAGE)
+  F:/install/clion/CLion 2025.1.7/bin/cmake/win/x64/share/cmake-3.31/Modules/FindBoost.cmake:2423 (find_package_handle_standard_args)
+  CMakeLists.txt:13 (find_package)
+
+
+-- Configuring incomplete, errors occurred!
