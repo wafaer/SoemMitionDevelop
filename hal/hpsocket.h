@@ -5,6 +5,7 @@
 #ifndef HPSOCKET_H
 #define HPSOCKET_H
 
+#include <string.h>
 #include "stdint.h"
 #include "motion/motion.h"
 #include "motion/motion_priv.h"
@@ -49,25 +50,6 @@ extern "C" {
 
 #pragma pack(push)
 #pragma pack(1)
-// 客户端结构体
-typedef struct {
-    int id;
-    HP_TcpClient pClient;
-    HP_TcpClientListener pListener;
-    BOOL bRunning;
-    BOOL bConnected;
-    const char* serverIP;
-    int serverPort;
-    pthread_t threadId;
-    uint8_t frame_state;
-    uint16_t bytes_expected;
-    linux_frame_t current_frame;
-    uint32_t temp_checksum;
-} ClientContext;
-#pragma pack(pop)
-
-#pragma pack(push)
-#pragma pack(1)
     //环形缓冲区
     typedef struct 
     {
@@ -79,6 +61,74 @@ typedef struct {
         uint32_t buffByte;
         void* pBuffer;
     } RING_BUFF_t;
+#pragma pack(pop)
+
+// 无锁 SPSC 队列（替代 mutex 环冲区）
+// 仅两个线程访问：网络线程(生产者) + 实时线程(消费者)
+// 无需 mutex，利用内存屏障保证顺序
+#define SPSC_QUEUE_SIZE 64
+
+    typedef struct {
+        volatile uint32_t write_idx;  // 仅生产者(网络线程)写入
+        volatile uint32_t read_idx;   // 仅消费者(实时线程)读取
+        linux_frame_t slots[SPSC_QUEUE_SIZE];
+    } spsc_queue_t;
+
+    static inline uint32_t spsc_count(spsc_queue_t* q) {
+        return q->write_idx - q->read_idx;
+    }
+
+    static inline int spsc_push(spsc_queue_t* q, const linux_frame_t* frame) {
+        uint32_t next = (q->write_idx + 1) % SPSC_QUEUE_SIZE;
+        if (next == q->read_idx) return -1;  // 队列满
+        memcpy(&q->slots[q->write_idx], frame, sizeof(linux_frame_t));
+        __sync_synchronize();                  // 内存屏障
+        q->write_idx = next;
+        return 0;
+    }
+
+    static inline int spsc_pop(spsc_queue_t* q, linux_frame_t* frame) {
+        if (q->read_idx == q->write_idx) return -1;  // 队列空
+        __sync_synchronize();                          // 内存屏障
+        memcpy(frame, &q->slots[q->read_idx], sizeof(linux_frame_t));
+        q->read_idx = (q->read_idx + 1) % SPSC_QUEUE_SIZE;
+        return 0;
+    }
+
+    // 帧解析状态机（处理粘包/半包）
+    typedef enum {
+        FRAME_STATE_IDLE = 0,
+        FRAME_STATE_GOT_HEADER,
+        FRAME_STATE_GOT_LENGTH,
+        FRAME_STATE_COMPLETE
+    } frame_parse_state_t;
+
+    typedef struct {
+        frame_parse_state_t state;
+        uint16_t           expected_len;
+        uint16_t           received_len;
+        uint8_t            rx_buf[256];
+    } frame_parser_t;
+
+#pragma pack(push)
+#pragma pack(1)
+    // 客户端结构体
+    typedef struct {
+        int id;
+        HP_TcpClient pClient;
+        HP_TcpClientListener pListener;
+        BOOL bRunning;
+        BOOL bConnected;
+        const char* serverIP;
+        int serverPort;
+        pthread_t threadId;
+        uint8_t frame_state;
+        uint16_t bytes_expected;
+        linux_frame_t current_frame;
+        uint32_t temp_checksum;
+        frame_parser_t parser;           // 粘包/半包解析器
+        spsc_queue_t   spsc_q;           // 无锁 SPSC 队列
+    } ClientContext;
 #pragma pack(pop)
 
 #pragma pack(push)

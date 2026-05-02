@@ -139,8 +139,8 @@ CMakeFiles/SoemMotroControl.dir/task/taskmain.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/stdio_lim.h \
  /home/wg/soem/SoemMitionDevelop/libnml/emccfg.h \
  /home/wg/soem/SoemMitionDevelop/rtapi/rtapi.h \
- /home/wg/soem/SoemMitionDevelop/hal/hpsocket.h \
- /home/wg/soem/SoemMitionDevelop/motion/motion.h \
+ /home/wg/soem/SoemMitionDevelop/hal/hpsocket.h /usr/include/string.h \
+ /usr/include/strings.h /home/wg/soem/SoemMitionDevelop/motion/motion.h \
  /home/wg/soem/SoemMitionDevelop/motion/emcmotcfg.h \
  /home/wg/soem/SoemMitionDevelop/motion/simple_tp.h \
  /home/wg/soem/SoemMitionDevelop/kinematics/cubic.h \

@@ -241,14 +241,18 @@ CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o
  /usr/include/alloca.h
  /usr/include/arpa/inet.h
  /usr/include/asm-generic/bitsperlong.h
+ /usr/include/asm-generic/errno-base.h
+ /usr/include/asm-generic/errno.h
  /usr/include/asm-generic/posix_types.h
  /usr/include/asm-generic/socket.h
  /usr/include/asm-generic/sockios.h
  /usr/include/endian.h
+ /usr/include/errno.h
  /usr/include/features-time64.h
  /usr/include/features.h
  /usr/include/inttypes.h
  /usr/include/limits.h
+ /usr/include/linux/errno.h
  /usr/include/linux/limits.h
  /usr/include/linux/posix_types.h
  /usr/include/linux/stddef.h
@@ -267,6 +271,7 @@ CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o
  /usr/include/unistd.h
  /usr/include/wchar.h
  /usr/include/x86_64-linux-gnu/asm/bitsperlong.h
+ /usr/include/x86_64-linux-gnu/asm/errno.h
  /usr/include/x86_64-linux-gnu/asm/posix_types.h
  /usr/include/x86_64-linux-gnu/asm/posix_types_64.h
  /usr/include/x86_64-linux-gnu/asm/socket.h
@@ -278,6 +283,7 @@ CMakeFiles/SoemMotroControl.dir/hal/hpsocket.c.o
  /usr/include/x86_64-linux-gnu/bits/endian.h
  /usr/include/x86_64-linux-gnu/bits/endianness.h
  /usr/include/x86_64-linux-gnu/bits/environments.h
+ /usr/include/x86_64-linux-gnu/bits/errno.h
  /usr/include/x86_64-linux-gnu/bits/floatn-common.h
  /usr/include/x86_64-linux-gnu/bits/floatn.h
  /usr/include/x86_64-linux-gnu/bits/getopt_core.h

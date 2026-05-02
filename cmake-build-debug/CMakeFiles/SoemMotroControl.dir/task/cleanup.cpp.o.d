@@ -87,7 +87,8 @@ CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h \
  /usr/include/x86_64-linux-gnu/bits/cpu-set.h \
  /home/wg/soem/SoemMitionDevelop/rtapi/rtapi_bitops.h \
- /home/wg/soem/SoemMitionDevelop/hal/hpsocket.h \
+ /home/wg/soem/SoemMitionDevelop/hal/hpsocket.h /usr/include/string.h \
+ /usr/include/strings.h \
  /home/wg/soem/SoemMitionDevelop/motion/motion_priv.h \
  /home/wg/soem/SoemMitionDevelop/hal/hal.h \
  /home/wg/soem/SoemMitionDevelop/rtapi/rtapi_stdint.h \

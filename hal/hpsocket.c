@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <signal.h>
 #include "hpsocket.h"
+
+#include <errno.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -136,13 +138,22 @@ En_HP_HandleResult __stdcall OnCloseLinux(HP_Client pSender, HP_CONNID dwConnID,
     printf("客户端LAC 连接关闭 [连接ID: %lu, 操作: %s, 错误码: %d]\n", dwConnID, opStr, iErrorCode);
     clientLinux.bConnected = FALSE;
     globalRunning = 0;
+
+    // 安全停止：触发紧急停止命令，防止客户端断开后轴继续运动
+    if (emcmotCommand != NULL) {
+        emcmotCommand->command = EMCMOT_ABORT;
+        emcmotCommand->commandNum++;
+    }
+
+    // 唤醒 ProcessTask 线程，防止其永久阻塞在 sem_wait()
+    sem_post(&sem_count_tcp_rx);
+
     return HR_OK;
 }
 
 // 初始化客户端
 BOOL InitClient(ClientContext* pContext)
 {
-
     // 创建监听器
     pContext->pListener = Create_HP_TcpClientListener();
     if (pContext->pListener == NULL)
@@ -166,8 +177,10 @@ BOOL InitClient(ClientContext* pContext)
     HP_Set_FN_Client_OnClose(pContext->pListener, OnCloseLinux);
 
     // 设置其他参数
-    HP_TcpClient_SetKeepAliveTime(pContext->pClient, 10000);
-    HP_TcpClient_SetKeepAliveInterval(pContext->pClient, 3000);
+    HP_TcpClient_SetKeepAliveTime(pContext->pClient, 3000);
+    HP_TcpClient_SetKeepAliveInterval(pContext->pClient, 1000);
+    // 禁用 Nagle 算法，确保 1ms 运动控制指令不被延迟合并
+    HP_TcpClient_SetNoDelay(pContext->pClient, TRUE);
 
     return TRUE;
 }
@@ -257,6 +270,15 @@ int socket_init()
     clientLinux.bConnected = FALSE;
     clientLinux.frame_state = 0;
 
+    // 初始化分包解析器
+    clientLinux.parser.state = FRAME_STATE_IDLE;
+    clientLinux.parser.received_len = 0;
+    clientLinux.parser.expected_len = 0;
+
+    // 初始化无锁 SPSC 队列
+    clientLinux.spsc_q.write_idx = 0;
+    clientLinux.spsc_q.read_idx = 0;
+
     // 检查IP地址是否有效
     if (clientLinux.serverIP == NULL || strlen(clientLinux.serverIP) == 0) {
         printf("错误：服务器IP地址为空\n");
@@ -293,64 +315,90 @@ En_HP_HandleResult AnalyseData(BYTE* pData,int iLength)
         rtapi_print_msg(RTAPI_MSG_ERR, "Invalid data: null pointer or length too short\n");
     }
 
-    // 解析帧头
-    uint32_t frame_header = *(uint32_t*)pData;
-    if (frame_header != 0x55AA55AA)
-    {
-        rtapi_print_msg(RTAPI_MSG_ERR, "Invalid frame header: 0x%08X, expected: 0x55AA55AA\n", frame_header);
+    // 帧解析状态机：处理粘包/半包
+    for (int i = 0; i < iLength; i++) {
+        uint8_t byte = pData[i];
+
+        switch (clientLinux.parser.state) {
+        case FRAME_STATE_IDLE:
+            // 查找帧头 0x55AA55AA (小端: 0x55 0xAA 0x55 0xAA)
+            clientLinux.parser.rx_buf[clientLinux.parser.received_len++] = byte;
+            if (clientLinux.parser.received_len >= 4) {
+                uint32_t header = *(uint32_t*)clientLinux.parser.rx_buf;
+                if (header == 0x55AA55AA) {
+                    clientLinux.parser.state = FRAME_STATE_GOT_HEADER;
+                    clientLinux.parser.received_len = 0;
+                } else {
+                    // 帧头不匹配，滑动窗口：丢弃第一个字节，从第二个字节重新查找
+                    memmove(clientLinux.parser.rx_buf, clientLinux.parser.rx_buf + 1, clientLinux.parser.received_len - 1);
+                    clientLinux.parser.received_len--;
+                }
+            }
+            break;
+
+        case FRAME_STATE_GOT_HEADER:
+            clientLinux.parser.rx_buf[clientLinux.parser.received_len++] = byte;
+            if (clientLinux.parser.received_len >= 2) {
+                clientLinux.parser.expected_len = *(uint16_t*)(clientLinux.parser.rx_buf);
+                // 帧头(4) + 数据长度(2) + 数据 + 校验和(4) <= 256
+                uint16_t total_frame_len = 4 + 2 + clientLinux.parser.expected_len + 4;
+                if (clientLinux.parser.expected_len > 128 || total_frame_len > 256) {
+                    rtapi_print_msg(RTAPI_MSG_ERR, "Invalid data length: %d\n", clientLinux.parser.expected_len);
+                    clientLinux.parser.state = FRAME_STATE_IDLE;
+                    clientLinux.parser.received_len = 0;
+                } else {
+                    clientLinux.parser.state = FRAME_STATE_GOT_LENGTH;
+                }
+            }
+            break;
+
+        case FRAME_STATE_GOT_LENGTH: {
+            clientLinux.parser.rx_buf[4 + clientLinux.parser.received_len++] = byte;
+            uint16_t total_needed = 6 + clientLinux.parser.expected_len + 4;
+            if (clientLinux.parser.received_len >= clientLinux.parser.expected_len + 4) {
+                // 收到完整帧，开始校验
+                uint16_t data_len = clientLinux.parser.expected_len;
+                uint32_t calculated_checksum = 0;
+                // 校验和范围：帧头后 2 字节(data_length) + 载荷数据
+                for (int j = 4; j < 4 + data_len; j++) {
+                    calculated_checksum += clientLinux.parser.rx_buf[j];
+                }
+                // 注意：客户端用 uint (4字节) 发送校验和，此处也用 uint32_t 对齐
+                uint32_t received_checksum = *(uint32_t*)(clientLinux.parser.rx_buf + 4 + data_len);
+
+                if (calculated_checksum != received_checksum) {
+                    rtapi_print_msg(RTAPI_MSG_ERR, "Checksum error: calc=0x%08X, recv=0x%08X\n",
+                                   calculated_checksum, received_checksum);
+                    clientLinux.parser.state = FRAME_STATE_IDLE;
+                    clientLinux.parser.received_len = 0;
+                    break;
+                }
+
+                // 解析帧有效载荷
+                clientLinux.current_frame.header = 0x55AA55AA;
+                clientLinux.current_frame.data_length = data_len;
+                clientLinux.current_frame.checksum = calculated_checksum;
+                memcpy(clientLinux.current_frame.payload, clientLinux.parser.rx_buf + 6, data_len);
+
+                // 使用无锁 SPSC 队列（替代 mutex 环冲区，避免优先级反转）
+                if (spsc_push(&clientLinux.spsc_q, &clientLinux.current_frame) != 0) {
+                    rtapi_print_msg(RTAPI_MSG_ERR, "SPSC queue full, frame dropped\n");
+                } else {
+                    sem_post(&sem_count_tcp_rx);
+                }
+
+                clientLinux.parser.state = FRAME_STATE_IDLE;
+                clientLinux.parser.received_len = 0;
+            }
+            break;
+        }
+
+        default:
+            clientLinux.parser.state = FRAME_STATE_IDLE;
+            clientLinux.parser.received_len = 0;
+            break;
+        }
     }
-
-    // 解析数据长度,检查数据长度是否超过最大限制
-    uint16_t data_length = *(uint16_t*)(pData + 4);
-    if (data_length > 64) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "Data length too large: %d\n", data_length);
-    }
-
-    // 检查接收到的数据是否完整
-    // 帧头 + 数据长度 + 数据 + 校验和
-    int expected_length = 4 + 2 + data_length + 4;
-    if (iLength < expected_length) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "Incomplete frame: received %d bytes, expected %d bytes\n", iLength, expected_length);
-    }
-
-    // 计算校验和
-    // 从数据长度开始到数据结束
-    uint32_t calculated_checksum = 0;
-    for (int i = 4; i < 4 + data_length; i++) {
-        calculated_checksum += pData[i];
-    }
-
-    // 获取帧中的校验和
-    uint32_t received_checksum = *(uint32_t*)(pData + 4 + 2 + data_length);
-
-    if (calculated_checksum != received_checksum)
-    {
-        rtapi_print_msg(RTAPI_MSG_ERR, "Checksum error: calculated=0x%08X, received=0x%08X\n", calculated_checksum, received_checksum);
-    }
-
-    // for (int i = 0; i < iLength; i++) {
-    //     rtapi_print_msg(RTAPI_MSG_INFO, "%02X ", pData[i]);
-    // }
-    // rtapi_print_msg(RTAPI_MSG_INFO, "\n");
-
-    clientLinux.current_frame.header = frame_header;
-    clientLinux.current_frame.data_length = data_length;
-    clientLinux.current_frame.checksum = calculated_checksum;
-    memcpy(clientLinux.current_frame.payload, pData + 6, data_length);
-
-    if (write_ringbuff(&TcpRxRingBuff, &clientLinux.current_frame) != 0)
-    {
-        rtapi_print_msg(RTAPI_MSG_ERR, "Failed to write frame to ring buffer\n");
-    }
-
-    // rtapi_print_msg(RTAPI_MSG_INFO, "write_end_frame: ");
-    // for (int i=0; i<data_length; i++) {
-    //     rtapi_print_msg(RTAPI_MSG_INFO, "%02X ", clientLinux.current_frame.payload[i]);
-    // }
-    // rtapi_print_msg(RTAPI_MSG_INFO, "\n");
-
-    // 通知处理线程有新数据
-    sem_post(&sem_count_tcp_rx);
     return HR_OK;
 }
 
@@ -360,12 +408,22 @@ void* ProcessTask(void* arg)
     emcmot_axis_t *axis;
     linux_frame_t frame;
 
-    if (globalRunning)
-    {
-        //等待接收到指令信号量
-        sem_wait(&sem_count_tcp_rx);
+    // 看门狗超时设置：1 秒无指令则报警（防止连接断开后永久阻塞）
+    struct timespec ts;
 
-        if (read_ringbuff(&TcpRxRingBuff, &frame) == 0)
+    while (globalRunning)
+    {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;  // 1 秒超时
+
+        int ret = sem_timedwait(&sem_count_tcp_rx, &ts);
+        if (ret == -1) {
+            // ETIMEDOUT 或其他错误，继续循环检查 globalRunning
+            continue;
+        }
+
+        // 使用无锁 SPSC 队列读取
+        if (spsc_pop(&clientLinux.spsc_q, &frame) == 0)
         {
             uint16_t axis_index, cmd_index;
             memcpy(&cmd_index, frame.payload, sizeof(uint16_t));
@@ -625,6 +683,8 @@ void* ProcessTask(void* arg)
             }
         }
     }
+
+    return NULL;
 }
 
 // 压缩轴数据
@@ -659,8 +719,6 @@ uint16_t compress_axis_data(axis_hal_t *axis_data, uint8_t *buffer)
         memcpy(buffer + offset, converter.bytes, 4);
         offset += 4;
     }
-
-    // rtapi_print_msg(RTAPI_MSG_DBG, "hp axis_data->axis_pos_fb %d\n", (int32_t)*axis_data->axis_pos_fb);
 
     // 状态位
     uint16_t status_bits = 0;
@@ -739,13 +797,6 @@ void* ClientThreadData(void* arg)
 
         // 计算校验和
         frame.checksum = calculate_checksum(&frame);
-
-        // rtapi_print_msg(RTAPI_MSG_ERR, "\n");
-        // uint8_t *p = (uint8_t *)&frame;
-        // for (int i = 0; i < sizeof(tcp_frame_t); i++) {
-        //     rtapi_print_msg(RTAPI_MSG_ERR, "%02X-", p[i]);
-        // }
-        // rtapi_print_msg(RTAPI_MSG_ERR, "\n");
 
         //send
         SendFrame(&clientLinux, &frame);
