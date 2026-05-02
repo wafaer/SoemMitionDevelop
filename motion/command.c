@@ -603,6 +603,15 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
 							emcmotCommand->turn);
 				/*直线添加失败
     			 * tpAddLine 返回负值表示添加失败（队列满、参数错误等） */
+    			if (res_addline >= 0) {
+    				rtapi_print_msg(RTAPI_MSG_INFO,
+						"[INTERP START] LINE queued: id=%d, target=(%.3f, %.3f, %.3f), vel=%.3f\n",
+						emcmotCommand->id,
+						emcmotCommand->pos.tran.x,
+						emcmotCommand->pos.tran.y,
+						emcmotCommand->pos.tran.z,
+						emcmotCommand->vel);
+    			}
 		        if (res_addline < 0) {
 		            rtapi_print_msg(RTAPI_MSG_DBG,("can't add linear move at line %d, error code %d"),
 		                    emcmotCommand->id, res_addline);
@@ -654,6 +663,17 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
 		                            emcmotCommand->Maxvel, emcmotCommand->ini_maxvel,
 		                            emcmotCommand->Maxacc, emcmotStatus->enables_new,
 									issue_atspeed);
+
+    			if (res_addcircle >= 0) {
+    				rtapi_print_msg(RTAPI_MSG_INFO,
+						"[INTERP START] CIRCLE queued: id=%d, center=(%.3f, %.3f, %.3f), turn=%d\n",
+						emcmotCommand->id,
+						emcmotCommand->center.x,
+						emcmotCommand->center.y,
+						emcmotCommand->center.z,
+						emcmotCommand->turn);
+    			}
+
                 /* 处理添加失败 */
 		        if (res_addcircle < 0)
 		        {

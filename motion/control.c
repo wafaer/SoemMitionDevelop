@@ -672,6 +672,35 @@ static void get_pos_cmds(long period)
     			 * 每次 cubicNeedNextPoint() 返回 true 时，表示插值器需要下一个数据点，
     			 * 此时运行一次 coord_tp 的规划周期来提供新的目标位置。 */
 
+    			if (!tpIsDone(&emcmotInternal->coord_tp) && !cubicNeedNextPoint(&(axes[0].cubic)))
+    			{
+    				tpRunCycle(&emcmotInternal->coord_tp, period);
+    				tpGetPos(&emcmotInternal->coord_tp, &emcmotStatus->carte_pos_cmd);
+
+    				positions[0] = emcmotStatus->carte_pos_cmd.tran.x;
+    				positions[1] = emcmotStatus->carte_pos_cmd.tran.y;
+    				positions[2] = emcmotStatus->carte_pos_cmd.tran.z;
+
+    				if (axis_update_coord_with_bound(pcmd_p, servo_period)) {
+    					ext_offset_coord_limit = 1;
+    				} else {
+    					ext_offset_coord_limit = 0;
+    				}
+
+    				for (axis_num = 0; axis_num < EMCMOT_MAX_AXIS; axis_num++)
+    				{
+    					axis = &axes[axis_num];
+    					if (!GET_AXIS_ACTIVE_FLAG(axis)) continue;
+
+    					axis = &axes[axis_num];
+    					axis->coarse_pos = positions[axis_num];
+    					/* 用新位置点重置插补器，使 needNextPoint 变为 1，
+						 * 从而让下方的 while 循环能够继续驱动新段 */
+    					cubicDrain(&(axis->cubic));
+    					cubicAddPoint(&(axis->cubic), axis->coarse_pos);
+    				}
+    			}
+
     			while (cubicNeedNextPoint(&(axes[0].cubic)))
     			{
     				/* 运行坐标轨迹规划器的一个伺服周期，
@@ -739,7 +768,11 @@ static void get_pos_cmds(long period)
 				 * 如果完成了，设置全局到位标志。 */
 				if (tpIsDone(&emcmotInternal->coord_tp)) {
 				    SET_MOTION_INPOS_FLAG(1);
-					rtapi_print_msg(RTAPI_MSG_INFO, "COORD: cubic interpolation motion complete\n");
+					rtapi_print_msg(RTAPI_MSG_INFO,
+					 "[INTERP DONE] motion complete: final pos=(%.3f, %.3f, %.3f)\n",
+					 emcmotStatus->carte_pos_cmd.tran.x,
+					 emcmotStatus->carte_pos_cmd.tran.y,
+					 emcmotStatus->carte_pos_cmd.tran.z);
 				}
 				break;
 

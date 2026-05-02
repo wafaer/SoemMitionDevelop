@@ -1933,6 +1933,12 @@ static void tpUpdateBlend(TP_STRUCT * const tp, TC_STRUCT * const tc,
  */
 static void tpHandleEmptyQueue(TP_STRUCT * const tp)
 {
+    rtapi_print_msg(RTAPI_MSG_INFO,
+      "[INTERP DONE] tpHandleEmptyQueue: all segments done, done=1, finalPos=(%.3f, %.3f, %.3f)\n",
+      tp->currentPos.tran.x,
+      tp->currentPos.tran.y,
+      tp->currentPos.tran.z);
+
 
     tcqInit(&tp->queue);
     tp->goalPos = tp->currentPos;
@@ -2526,6 +2532,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
 
     if(!tc) {
         tpHandleEmptyQueue(tp);
+        rtapi_print_msg(RTAPI_MSG_DBG, "[INTERP] queue empty, tpRunCycle return WAITING\n");
         return TP_ERR_WAITING;
     }
     if (tpHandleAbort(tp, tc, nexttc) == TP_ERR_STOPPED) {

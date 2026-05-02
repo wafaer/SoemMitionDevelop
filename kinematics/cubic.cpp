@@ -294,10 +294,6 @@ double cubicInterpolate(CUBIC_STRUCT * ci, double *x, double *v, double *a, doub
 
     ci->interpolationTime += ci->interpolationIncrement;
 
-    // rtapi_print_msg(RTAPI_MSG_DBG, "ci->segmentTime %f", ci->segmentTime);
-    // rtapi_print_msg(RTAPI_MSG_DBG, " ci->interpolationTime %f", ci->interpolationTime);
-    // rtapi_print_msg(RTAPI_MSG_DBG, " ci->interpolationIncrement %f\n", ci->interpolationIncrement);
-
     /* check to see if the next point is at (close to) the segment end */
     if (fabs(ci->segmentTime - ci->interpolationTime) < 0.5 * ci->interpolationIncrement)
     {
