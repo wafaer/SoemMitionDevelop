@@ -263,7 +263,7 @@ static inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
         v_target = fmin(v_target_this, v_target_next);
     }else
     {
-        v_target = v_target_this;
+        v_target = 0.0;
     }
 
     return fmin(tc->finalvel, v_target);

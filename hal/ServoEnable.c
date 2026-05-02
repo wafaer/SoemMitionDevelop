@@ -242,8 +242,8 @@ void *ecatthread(void *arg)
          emcecatStatus->motoro[i] = &motorOutInstance[i];
          emcecatStatus->motori[i] = &motorInInstance[i];
 
-         emcecatStatus->motoro[i]->PPtargetPosition = 400000000;
-         emcecatStatus->motori[i]->actualPosition = 400000000;
+         emcecatStatus->motoro[i]->PPtargetPosition = 0;
+         emcecatStatus->motori[i]->actualPosition = 0;
 
          InPos = emcecatStatus->motori[i]->actualPosition;
          emcecatStatus->motoro[i]->PPtargetPosition = InPos;
