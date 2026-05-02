@@ -210,7 +210,7 @@ static void handle_interpolation(void)
 static void process_inputs(void)
 {
     int axis_num;
-    int32_t abs_ferror, scale;  /* abs_ferror: 跟随误差绝对值; scale: 比例因子 */
+    double abs_ferror, scale;  /* abs_ferror: 跟随误差绝对值; scale: 比例因子 */
     axis_hal_t *axis_data;  /* 指向轴的 HAL 数据结构的指针 */
     emcmot_axis_t *axis;     /* 指向轴的内部运行时数据的指针 */
     unsigned char enables;    /* 使能标志集合（FS_ENABLED 等）*/
@@ -259,15 +259,12 @@ static void process_inputs(void)
 		axis->motor_pos_fb = *(axis_data->motor_pos_fb);
 	    axis->pos_fb = axis->motor_pos_fb - axis->motor_offset;
 	    axis->ferror = axis->pos_cmd - axis->pos_fb;
-		abs_ferror = (int32_t)fabs(axis->ferror);  /* 取绝对值用于比较 */
+
+		abs_ferror = fabs(axis->ferror);  /* 取绝对值用于比较 */
 		if (axis->vel_limit > 0) {
 			/* 计算：max_ferror * (当前速度 / 最大速度) */
-			int64_t temp = (int64_t)axis->max_ferror * axis->vel_cmd / axis->vel_limit;
-			// rtapi_print_msg(RTAPI_MSG_DBG, "temp %ld", temp);
-
-		    /* 将计算结果（int64_t）赋给 ferror_limit（根据类型可能是 double 或 int32） */
+			double temp = axis->max_ferror * axis->vel_cmd / axis->vel_limit;
 		    axis->ferror_limit = temp;
-			// rtapi_print_msg(RTAPI_MSG_DBG, " axis->ferror_limit %d\n", axis->ferror_limit);
 
 		} else {
 		    /* 速度限制为 0 时，将跟随误差限值也设为 0 */
@@ -377,15 +374,12 @@ static void check_for_faults(void)
 			emcmotInternal->enabling = 0;  /* 关闭运动使能 */
 	    }
 
-		//跟随误差检查
-
 	    /* 检查跟随误差是否超过限值。
 	     * 跟随误差超限通常表示伺服系统跟不上指令（负载过大或参数不当）*/
 	    if (GET_AXIS_FERROR_FLAG(axis)) {
 			if (!GET_AXIS_ERROR_FLAG(axis))
 			{
 			    rtapi_print_msg(RTAPI_MSG_DBG, "axis %d following error\n", axis_num);
-				print_msg(RTAPI_MSG_DBG, "axis %d following error\n", axis_num);
 			}
 			SET_AXIS_ERROR_FLAG(axis, 1);
 			emcmotInternal->enabling = 0;  /* 关闭运动使能 */

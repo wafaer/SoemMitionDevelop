@@ -350,7 +350,7 @@ static int init_motion_comm_buffers(void)
 		axis->vel_limit = 1;
 		axis->acc_limit = 1;
         /* 设置跟随误差限值 */
-		axis->min_ferror = 400;       /* 最小跟随误差（零速时）*/
+		axis->min_ferror = 10000;       /* 最小跟随误差（零速时）*/
 		axis->max_ferror = 27486951;  /* 最大跟随误差（高速时）*/
 
 		/* init joint flags */

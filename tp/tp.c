@@ -274,6 +274,7 @@ static inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
  */
 int tpInit(TP_STRUCT * const tp)
 {
+    tp->spindle.waiting_for_atspeed = -1;
     tp->cycleTime = 0.0;
     tp->vLimit = 0.0;
     tp->ini_maxvel = 0.0;
@@ -1971,7 +1972,8 @@ static int tpCompleteSegment(TP_STRUCT * const tp,
         TC_STRUCT * const tc) {
 
     /* 如果在等待主轴到位信号，不移除 */
-    if (tp->spindle.waiting_for_atspeed == tc->id) {
+    if (tp->spindle.waiting_for_atspeed != -1 &&
+        tp->spindle.waiting_for_atspeed == tc->id) {
         rtapi_print_msg(RTAPI_MSG_ERR, "[TP] tpCompleteSegment FAIL: waiting_for_atspeed=%d id=%d\n",
           tp->spindle.waiting_for_atspeed, tc->id);
         return TP_ERR_FAIL;
