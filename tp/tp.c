@@ -1972,6 +1972,8 @@ static int tpCompleteSegment(TP_STRUCT * const tp,
 
     /* 如果在等待主轴到位信号，不移除 */
     if (tp->spindle.waiting_for_atspeed == tc->id) {
+        rtapi_print_msg(RTAPI_MSG_ERR, "[TP] tpCompleteSegment FAIL: waiting_for_atspeed=%d id=%d\n",
+          tp->spindle.waiting_for_atspeed, tc->id);
         return TP_ERR_FAIL;
     }
     if(tc->synchronized != TC_SYNC_NONE) {
@@ -1984,7 +1986,12 @@ static int tpCompleteSegment(TP_STRUCT * const tp,
     if(tc->indexer_jnum != -1) {
         tpSetRotaryUnlock(tc->indexer_jnum, 0);
         if(tpGetRotaryIsUnlocked(tc->indexer_jnum))
+        {
+            rtapi_print_msg(RTAPI_MSG_ERR, "[TP] tpCompleteSegment FAIL: indexer_jnum=%d not unlocked\n",
+             tc->indexer_jnum);
             return TP_ERR_FAIL;
+        }
+
     }
 
     tc->active = 0;
