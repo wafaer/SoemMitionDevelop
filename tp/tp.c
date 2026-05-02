@@ -2225,9 +2225,11 @@ static int tpUpdateCycle(TP_STRUCT * const tp, TC_STRUCT * const tc, TC_STRUCT c
     int res_set = tpAddCurrentPos(tp, &displacement);
     rtapi_mutex_give(&emcmotInternal->command_mutex);
 
+    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpUpdateCycle: id=%d disp=(%.6f,%.6f) vel=%.3f acc=%.3f\n",
+        tc->id, displacement.tran.x, displacement.tran.y, tc->currentvel, acc);
+
     return res_set;
 }
-
 
 /*
  * tpUpdateInitialStatus — 发送默认状态值
@@ -2523,6 +2525,9 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
     TC_STRUCT *tc;
     TC_STRUCT *nexttc;
 
+    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpRunCycle: tc=%p done=%d depth=%d\n",
+      tc, tp->done, tp->depth);
+
     /* 根据方向确定下一步的索引（正向+1，反向-1） */
     int queue_dir_step = tp->reverse_run ? -1 : 1;
     tc = tcqItem(&tp->queue, 0);
@@ -2541,8 +2546,12 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
 
     int res_activate = tpActivateSegment(tp, tc);
     if (res_activate != TP_ERR_OK ) {
+        rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpActivateSegment returned %d for id=%d\n", res_activate, tc->id);
         return res_activate;
     }
+
+    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpRunCycle: id=%d progress=%.3f target=%.3f vel=%.3f splitting=%d remove=%d\n"
+      ,tc->id, tc->progress, tc->target, tc->currentvel, tc->splitting, tc->remove);
 
     if (tc->motion_type == TC_RIGIDTAP) {
         tpUpdateRigidTapState(tp, tc);
@@ -2596,6 +2605,10 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
     if (tc->remove) {
         tpCompleteSegment(tp, tc);
     }
+
+    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpRunCycle done: currentPos=(%.3f,%.3f) id=%d progress=%.3f vel=%.3f remove=%d, done=%d\n",
+        tp->currentPos.tran.x, tp->currentPos.tran.y,
+        tc->id, tc->progress, tc->currentvel, tc->remove, tp->done);
 
     return TP_ERR_OK;
 }

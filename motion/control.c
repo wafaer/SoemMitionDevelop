@@ -672,6 +672,9 @@ static void get_pos_cmds(long period)
     			 * 每次 cubicNeedNextPoint() 返回 true 时，表示插值器需要下一个数据点，
     			 * 此时运行一次 coord_tp 的规划周期来提供新的目标位置。 */
 
+    			rtapi_print_msg(RTAPI_MSG_INFO, "[COORD] done=%d needNext=%d\n",
+							tpIsDone(&emcmotInternal->coord_tp),cubicNeedNextPoint(&(axes[0].cubic)));
+
     			if (!tpIsDone(&emcmotInternal->coord_tp) && !cubicNeedNextPoint(&(axes[0].cubic)))
     			{
     				tpRunCycle(&emcmotInternal->coord_tp, period);
