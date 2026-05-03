@@ -567,8 +567,8 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
     			 * 为直线段分配 ID，用于后续状态查询和同步 */
 			    tpSetId(&emcmotInternal->coord_tp, emcmotCommand->id);
                 /* 处理参考坐标系（相对/绝对）
-    			 * ref == 1: 相对坐标（G91 模式）
-    			 * ref == 0: 绝对坐标（G90 模式） */
+    			 * ref == 1: 相对坐标
+    			 * ref == 0: 绝对坐标 */
     			if (emcmotCommand->ref)
     			{
                     /* 相对坐标：目标 = 当前位置 + 命令中的增量 */
@@ -655,6 +655,10 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
 			    /* append it to the emcmotInternal->coord_tp
     			 * 为圆弧段分配 ID */
 			    tpSetId(&emcmotInternal->coord_tp, emcmotCommand->id);
+
+    			/* 设置轨迹速度限值 */
+    			tpSetVlimit(&emcmotInternal->coord_tp, emcmotConfig->limitVel);
+
                 /* 调用坐标轨迹规划器添加圆弧段
     			 * 圆弧参数包括：终点、圆心、法向量、圈数等 */
 			    int res_addcircle = tpAddCircle(&emcmotInternal->coord_tp, emcmotCommand->pos,

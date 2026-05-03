@@ -2587,6 +2587,8 @@ CMakeFiles/SoemMotroControl.dir/task/cleanup.cpp.o: /home/wg/soem/SoemMitionDeve
   /usr/include/stdint.h \
   /usr/include/stdio.h \
   /usr/include/stdlib.h \
+  /usr/include/string.h \
+  /usr/include/strings.h \
   /usr/include/time.h \
   /usr/include/wchar.h \
   /usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h \
@@ -2879,6 +2881,8 @@ CMakeFiles/SoemMotroControl.dir/task/taskmain.cpp.o: /home/wg/soem/SoemMitionDev
   /usr/include/stdint.h \
   /usr/include/stdio.h \
   /usr/include/stdlib.h \
+  /usr/include/string.h \
+  /usr/include/strings.h \
   /usr/include/time.h \
   /usr/include/unistd.h \
   /usr/include/wchar.h \

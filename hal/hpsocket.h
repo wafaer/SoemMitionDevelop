@@ -193,15 +193,28 @@ extern "C" {
 
     typedef struct
     {
-        int32_t LinearStartVel;                //直线插补起跳速度
-        int32_t LinearVel;                      // 直线插补速度
-        int32_t LinearAcc;                     // 直线插补加速度
-        int32_t LinearDec;                     // 直线插补减速度
-        int32_t ReferenceDir;                    // 参考方向 1相对 0绝对
-        int32_t MoveDir;                        // 运动方向 1正向 0反向
-        int32_t LinearPos[EMCMOT_MAX_AXIS];    // 直线插补目标位置
-        int32_t AxisIndex[EMCMOT_MAX_AXIS];    //操作轴索引
+        int32_t LinearStartVel;
+        int32_t LinearVel;
+        int32_t LinearAcc;
+        int32_t LinearDec;
+        int32_t ReferenceDir;
+        int32_t MoveDir;
+        int32_t LinearPos[EMCMOT_MAX_AXIS];
+        int32_t AxisIndex[EMCMOT_MAX_AXIS];
     }LineaInterpParam;
+
+    typedef struct
+    {
+        int32_t CycleStartVel;
+        int32_t CycleVel;
+        int32_t CycleAcc;
+        int32_t CycleDec;
+        int32_t Turn;
+        int32_t AxisIndex[EMCMOT_MAX_AXIS];
+        int32_t Normal[EMCMOT_MAX_AXIS];
+        int32_t CycleEndPos[EMCMOT_MAX_AXIS];
+        int32_t CycleEnterPos[EMCMOT_MAX_AXIS];
+    }CycleInterpParam;
 
     typedef struct {
         int32_t FreeMotion;

@@ -2534,8 +2534,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
     TC_STRUCT *tc;
     TC_STRUCT *nexttc;
 
-    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpRunCycle: tc=%p done=%d depth=%d\n",
-      tc, tp->done, tp->depth);
+    rtapi_print_msg(RTAPI_MSG_INFO, "[TP] tpRunCycle: tc=%p done=%d depth=%d\n", tc, tp->done, tp->depth);
 
     /* 根据方向确定下一步的索引（正向+1，反向-1） */
     int queue_dir_step = tp->reverse_run ? -1 : 1;

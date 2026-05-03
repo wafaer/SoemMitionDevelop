@@ -308,90 +308,85 @@ int socket_init()
     return 0;
 }
 
-En_HP_HandleResult AnalyseData(BYTE* pData,int iLength)
+En_HP_HandleResult AnalyseData(BYTE* pData, int iLength)
 {
-    if (pData == NULL || iLength < 10)
-    { // 最小帧长度：帧头4 + 数据长度2 + 校验和4 = 10字节
-        rtapi_print_msg(RTAPI_MSG_ERR, "Invalid data: null pointer or length too short\n");
-    }
+    if (pData == NULL || iLength == 0) return HR_OK; // 注意: TCP粘包时可能分段到达，不要因为 length < 10 就报错
 
-    // 帧解析状态机：处理粘包/半包
     for (int i = 0; i < iLength; i++) {
         uint8_t byte = pData[i];
 
+        // 使用连续缓冲区策略：received_len 代表 rx_buf 中已接收的总字节数
+        clientLinux.parser.rx_buf[clientLinux.parser.received_len++] = byte;
+
         switch (clientLinux.parser.state) {
         case FRAME_STATE_IDLE:
-            // 查找帧头 0x55AA55AA (小端: 0x55 0xAA 0x55 0xAA)
-            clientLinux.parser.rx_buf[clientLinux.parser.received_len++] = byte;
             if (clientLinux.parser.received_len >= 4) {
                 uint32_t header = *(uint32_t*)clientLinux.parser.rx_buf;
                 if (header == 0x55AA55AA) {
                     clientLinux.parser.state = FRAME_STATE_GOT_HEADER;
-                    clientLinux.parser.received_len = 0;
                 } else {
-                    // 帧头不匹配，滑动窗口：丢弃第一个字节，从第二个字节重新查找
-                    memmove(clientLinux.parser.rx_buf, clientLinux.parser.rx_buf + 1, clientLinux.parser.received_len - 1);
+                    // 滑动窗口丢弃首字节
+                    memmove(clientLinux.parser.rx_buf, clientLinux.parser.rx_buf + 1, 3);
                     clientLinux.parser.received_len--;
                 }
             }
             break;
 
         case FRAME_STATE_GOT_HEADER:
-            clientLinux.parser.rx_buf[clientLinux.parser.received_len++] = byte;
-            if (clientLinux.parser.received_len >= 2) {
-                clientLinux.parser.expected_len = *(uint16_t*)(clientLinux.parser.rx_buf);
-                // 帧头(4) + 数据长度(2) + 数据 + 校验和(4) <= 256
-                uint16_t total_frame_len = 4 + 2 + clientLinux.parser.expected_len + 4;
+            if (clientLinux.parser.received_len >= 6) { // 4(帧头) + 2(长度) = 6
+                // 提取预期的数据长度
+                clientLinux.parser.expected_len = *(uint16_t*)(clientLinux.parser.rx_buf + 4);
+
+                uint16_t total_frame_len = 6 + clientLinux.parser.expected_len + 4; // 帧头+长度+数据+校验和
                 if (clientLinux.parser.expected_len > 128 || total_frame_len > 256) {
-                    rtapi_print_msg(RTAPI_MSG_ERR, "Invalid data length: %d\n", clientLinux.parser.expected_len);
+                    rtapi_print_msg(RTAPI_MSG_ERR, "Invalid length: %d\n", clientLinux.parser.expected_len);
                     clientLinux.parser.state = FRAME_STATE_IDLE;
-                    clientLinux.parser.received_len = 0;
+                    clientLinux.parser.received_len = 0; // 发生错误，状态机复位
                 } else {
                     clientLinux.parser.state = FRAME_STATE_GOT_LENGTH;
                 }
             }
             break;
 
-        case FRAME_STATE_GOT_LENGTH: {
-            clientLinux.parser.rx_buf[4 + clientLinux.parser.received_len++] = byte;
-            uint16_t total_needed = 6 + clientLinux.parser.expected_len + 4;
-            if (clientLinux.parser.received_len >= clientLinux.parser.expected_len + 4) {
-                // 收到完整帧，开始校验
-                uint16_t data_len = clientLinux.parser.expected_len;
-                uint32_t calculated_checksum = 0;
-                // 校验和范围：帧头后 2 字节(data_length) + 载荷数据
-                for (int j = 4; j < 4 + data_len; j++) {
-                    calculated_checksum += clientLinux.parser.rx_buf[j];
-                }
-                // 注意：客户端用 uint (4字节) 发送校验和，此处也用 uint32_t 对齐
-                uint32_t received_checksum = *(uint32_t*)(clientLinux.parser.rx_buf + 4 + data_len);
+        case FRAME_STATE_GOT_LENGTH:
+            {
+                uint16_t total_needed = 6 + clientLinux.parser.expected_len + 4;
+                if (clientLinux.parser.received_len >= total_needed) {
+                    // 收到完整帧
+                    uint16_t data_len = clientLinux.parser.expected_len;
+                    uint32_t calculated_checksum = 0;
 
-                if (calculated_checksum != received_checksum) {
-                    rtapi_print_msg(RTAPI_MSG_ERR, "Checksum error: calc=0x%08X, recv=0x%08X\n",
-                                   calculated_checksum, received_checksum);
+                    // 校验范围：rx_buf[4] 到 rx_buf[6 + data_len - 1]
+                    for (int j = 4; j < 6 + data_len; j++) {
+                        calculated_checksum += clientLinux.parser.rx_buf[j];
+                    }
+
+                    // 提取收到的校验和 (在数据之后)
+                    uint32_t received_checksum = *(uint32_t*)(clientLinux.parser.rx_buf + 6 + data_len);
+
+                    if (calculated_checksum != received_checksum) {
+                        rtapi_print_msg(RTAPI_MSG_ERR, "Checksum error: calc=0x%08X, recv=0x%08X\n",
+                                        calculated_checksum, received_checksum);
+                    } else {
+                        // 解析帧有效载荷
+                        clientLinux.current_frame.header = 0x55AA55AA;
+                        clientLinux.current_frame.data_length = data_len;
+                        clientLinux.current_frame.checksum = calculated_checksum;
+                        memcpy(clientLinux.current_frame.payload, clientLinux.parser.rx_buf + 6, data_len);
+
+                        if (spsc_push(&clientLinux.spsc_q, &clientLinux.current_frame) != 0) {
+                            rtapi_print_msg(RTAPI_MSG_ERR, "SPSC queue full\n");
+                        } else {
+                            sem_post(&sem_count_tcp_rx);
+                        }
+                    }
+
+                    // 无论成功失败，当前帧处理完毕，复位准备接下一帧
                     clientLinux.parser.state = FRAME_STATE_IDLE;
                     clientLinux.parser.received_len = 0;
-                    break;
                 }
-
-                // 解析帧有效载荷
-                clientLinux.current_frame.header = 0x55AA55AA;
-                clientLinux.current_frame.data_length = data_len;
-                clientLinux.current_frame.checksum = calculated_checksum;
-                memcpy(clientLinux.current_frame.payload, clientLinux.parser.rx_buf + 6, data_len);
-
-                // 使用无锁 SPSC 队列（替代 mutex 环冲区，避免优先级反转）
-                if (spsc_push(&clientLinux.spsc_q, &clientLinux.current_frame) != 0) {
-                    rtapi_print_msg(RTAPI_MSG_ERR, "SPSC queue full, frame dropped\n");
-                } else {
-                    sem_post(&sem_count_tcp_rx);
-                }
-
-                clientLinux.parser.state = FRAME_STATE_IDLE;
-                clientLinux.parser.received_len = 0;
             }
             break;
-        }
 
         default:
             clientLinux.parser.state = FRAME_STATE_IDLE;
@@ -641,6 +636,56 @@ void* ProcessTask(void* arg)
                             emcmotCommand->motion_type = EMC_MOTION_TYPE_FEED;
                             emcmotCommand->dir = param->MoveDir;
                             emcmotCommand->ref = param->ReferenceDir;
+                            emcmotCommand->command = cmd_type;
+                            emcmotCommand->commandNum++;
+                            emcmotCommand->axis = axis_index;
+                            emcmotCommand->spindle = axis_index;
+                        }
+                    }
+                    break;
+
+                case EMCMOT_SET_CIRCLE:
+                    if (param_data_length >= sizeof(CycleInterpParam))
+                    {
+                        CycleInterpParam *param = (CycleInterpParam *)param_data;
+                        rtapi_print_msg(RTAPI_MSG_INFO,"start cycle motion\n");
+                        if (emcmotCommand)
+                        {
+                            for (int i = 0; i < EMCMOT_MAX_AXIS; i++)
+                            {
+                                axis = &axes[i];
+                                if (param->AxisIndex[i] == 1)
+                                {
+                                    axis->acc_cmd = param->CycleAcc;
+                                    axis->vel_cmd = param->CycleVel;
+                                    axis->acc_limit = emcmotCommand->Maxacc;
+                                    axis->vel_limit = emcmotCommand->Maxvel;
+                                    axis->max_pos_limit = emcmotCommand->maxLimit;
+                                    axis->min_pos_limit = emcmotCommand->minLimit;
+                                    axis->max_jog_limit = emcmotCommand->maxLimit;
+                                    axis->min_jog_limit = emcmotCommand->minLimit;
+                                }
+
+                            }
+
+                            emcmotCommand->normal.x = (double)param->Normal[0];
+                            emcmotCommand->normal.y = (double)param->Normal[1];
+                            emcmotCommand->normal.z = (double)param->Normal[2];
+
+                            emcmotCommand->pos.tran.x = (double)param->CycleEndPos[0];
+                            emcmotCommand->pos.tran.y = (double)param->CycleEndPos[1];
+                            emcmotCommand->pos.tran.z = (double)param->CycleEndPos[2];
+
+                            emcmotCommand->center.x = (double)param->CycleEnterPos[0];
+                            emcmotCommand->center.y = (double)param->CycleEnterPos[1];
+                            emcmotCommand->center.z = (double)param->CycleEnterPos[2];
+
+                            emcmotCommand->ini_maxvel = param->CycleStartVel;
+                            emcmotCommand->vel = param->CycleVel;
+                            emcmotCommand->acc = param->CycleAcc;
+                            emcmotCommand->dec = param->CycleDec;
+                            emcmotCommand->motion_type = EMC_MOTION_TYPE_FEED;
+                            emcmotCommand->turn = param->Turn;
                             emcmotCommand->command = cmd_type;
                             emcmotCommand->commandNum++;
                             emcmotCommand->axis = axis_index;
@@ -939,7 +984,7 @@ static int init_socket_threads(void)
         return -1;
     }
 
-    retval = hal_create_thread("client_s", socket_period_sec*1000*5,1,95);
+    retval = hal_create_thread("client_s", socket_period_sec*1000,1,95);
     if (retval < 0) {
         rtapi_print_msg(RTAPI_MSG_INFO,"SOCKET: failed to create client_s\n");
         return -1;
