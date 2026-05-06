@@ -1244,8 +1244,8 @@ static int tpRunOptimization(TP_STRUCT * const tp)
     for (x = 1; x < emcmotConfig->arcBlendOptDepth + 2; ++x)
     {
         ind = len-x;
-        tc = tcqItem(&tp->queue, ind);             // 当前轨迹段
-        prev1_tc = tcqItem(&tp->queue, ind-1);   // 前序轨迹段
+        tc = tcqItem(&tp->queue, ind);
+        prev1_tc = tcqItem(&tp->queue, ind-1);
 
         if ( !prev1_tc || !tc) {
             return TP_ERR_OK;
@@ -1556,6 +1556,7 @@ int tpAddCircle(TP_STRUCT * const tp,
         unsigned char enables,
         char atspeed)
 {
+    // 队列满/急停检查
     if (tpErrorCheck(tp)<0) {
         return TP_ERR_FAIL;
     }
@@ -1584,32 +1585,41 @@ int tpAddCircle(TP_STRUCT * const tp,
 
     if (res_init) return res_init;
 
-    tc.target = pmCircle9Target(&tc.coords.circle); // 计算实际弧长
+    // 计算实际弧长
+    tc.target = pmCircle9Target(&tc.coords.circle);
     if (tc.target < TP_POS_EPSILON) {
         return TP_ERR_ZERO_LENGTH;
     }
     tc.nominal_length = tc.target;
 
+    //设置速度,加速度参数
     tcSetupMotion(&tc,
             vel,
             ini_maxvel,
             acc);
 
-    tcClampVelocityByLength(&tc);  // 基于弧长限制速度
+    // 基于弧长限制速度
+    tcClampVelocityByLength(&tc);
 
     TC_STRUCT *prev_tc;
     prev_tc = tcqLast(&tp->queue);
 
     handleModeChange(prev_tc, &tc);
+
     if (emcmotConfig->arcBlendEnable){
+        //处理与前段的平滑混合
         tpHandleBlendArc(tp, &tc);
+        //螺旋弧长拟合
         findSpiralArcLengthFit(&tc.coords.circle.xyz, &tc.coords.circle.fit);
     }
+
+    //冻结前一段的几何长度
     tcFinalizeLength(prev_tc);
-    tcFlagEarlyStop(prev_tc, &tc);// 标记提前减速
-
+    //标记提前减速点
+    tcFlagEarlyStop(prev_tc, &tc);
+    //将TC压入循环队列，更新goalPos
     int retval = tpAddSegmentToQueue(tp, &tc, true);
-
+    //反向传播速度优化
     tpRunOptimization(tp);
     return retval;
 }
@@ -2582,10 +2592,6 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
             break;
     }
 
-#ifdef TC_DEBUG
-    EmcPose pos_before = tp->currentPos;
-#endif
-
     tcClearFlags(tc);
     tcClearFlags(nexttc);
     if (tc->splitting) {
@@ -2593,22 +2599,6 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
     } else {
         tpHandleRegularCycle(tp, tc, nexttc);
     }
-
-#ifdef TC_DEBUG
-    double mag;
-    EmcPose disp;
-    emcPoseSub(&tp->currentPos, &pos_before, &disp);
-    emcPoseMagnitude(&disp, &mag);
-    tc_debug_print("time: %.12e total movement = %.12e vel = %.12e\n",
-            time_elapsed,
-            mag, emcmotStatus->current_vel);
-
-    tc_debug_print("tp_displacement = %.12e %.12e %.12e time = %.12e\n",
-            disp.tran.x,
-            disp.tran.y,
-            disp.tran.z,
-            time_elapsed);
-#endif
 
     if (tc->remove) {
         tpCompleteSegment(tp, tc);

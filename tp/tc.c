@@ -587,7 +587,7 @@ double pmLine9Target(PmLine9 * const line9)
  *   - canon_motion_type  : 解释器级别的运动类型
  *   - atspeed           : 主轴到位标志
  *   - enables           : 使能位（进给倍率等）
- *   - cycle_time        : 周期时间
+ *   - cycle_time        : 使能位
  *   - id                : 设为 -1（在加入队列时才分配）
  *   - indexer_jnum      : 设为 -1（无索引旋转）
  *   - active_depth      : 设为 1（活跃深度初始为1）
